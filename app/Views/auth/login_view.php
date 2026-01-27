@@ -49,18 +49,18 @@
                   </div>
 
                   <!-- Botón: Menos alto y más elegante -->
-                  <div class="mb-3">
+                 <!-- <div class="mb-3">
                     <a href="<?= base_url('/home') ?>" 
                       class="btn btn-dark btn-md w-100 shadow-sm"
                       style="padding: 10px; border-radius: 0.5rem; font-weight: 600; text-decoration: none; display: block;">
                         Iniciar Sesión
-                    </a>
-                    <!--
+                    </a>-->
+                    
                     <button class="btn btn-dark btn-md w-100 shadow-sm" type="submit" 
                             style="padding: 10px; border-radius: 0.5rem; font-weight: 600;">
                       Iniciar Sesión
                     </button>
-                    -->
+                  
                   </div>
                 </form>
 

@@ -8,9 +8,6 @@
 
 <div class="container-fluid">
     <div class="row flex-nowrap">
-        
-        <?= view('layouts/partials/sidebar') ?>
-
         <main class="col py-3 overflow-auto" role="main">
             <div class="container-fluid">
                 <h3>Bienvenido al Sistema</h3>

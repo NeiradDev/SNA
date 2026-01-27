@@ -13,7 +13,7 @@
           <div class="row g-0">
             <!-- Imagen Lateral: Ajustada para que no sea tan ancha -->
             <div class="col-md-5 col-lg-5 d-none d-md-block">
-              <img src="<?= base_url('assets/img/login-side.jpg') ?>"
+              <img src="<?= base_url('assets/img/img-login.png') ?>"
                 alt="BPC Login" class="img-fluid" 
                 style="border-radius: 1rem 0 0 1rem; height: 100%; object-fit: cover;" />
             </div>

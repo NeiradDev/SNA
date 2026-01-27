@@ -3,31 +3,32 @@
 $menuItems = [
     [
         'title' => 'Dashboard',
-        'icon'  => 'bi-speedometer2',
+        'icon'  => 'bi-graph-up',
         'id'    => 'submenu-dashboard',
-        'sub'   => ['Mi Dashboard', 'Mi Equipo', 'Mi División']
+        'sub'   => ['Mi Equipo', 'Mi División']
+    ],
+
+    [
+        'title' => 'Reporte',
+        'icon'  => 'bi-clipboard2-data',
+        'id'    => 'submenu-reporte',
+        'sub'   => ['Plan de Batalla', 'Historico']
     ],
     [
-        'title' => 'Orders',
-        'icon'  => 'bi-table',
+        'title' => 'Agencias',
+        'icon'  => 'bi-houses',
         'url'   => '/home'
     ],
     [
-        'title' => 'Bootstrap',
-        'icon'  => 'bi-bootstrap',
-        'id'    => 'submenu-bootstrap',
-        'sub'   => ['Item 1', 'Item 2']
-    ],
-    [
-        'title' => 'Products',
+        'title' => 'Areas',
         'icon'  => 'bi-grid',
-        'id'    => 'submenu-products',
-        'sub'   => ['Product 1', 'Product 2', 'Product 3']
+        'id'    => 'submenu-areas',
+        'sub'   => ['Tics', 'Contabilidad', 'Talento Humano']
     ],
     [
-        'title' => 'Customers',
+        'title' => 'Usuarios',
         'icon'  => 'bi-people',
-        'url'   => '/home'
+        'url'   => '/usuarios'
     ],
 ];
 ?>
@@ -74,14 +75,13 @@ $menuItems = [
 
         <div class="dropdown pb-4 w-100">
             <a href="#" class="d-flex align-items-center text-white text-decoration-none dropdown-toggle" id="dropdownUser" data-bs-toggle="dropdown" aria-expanded="false">
-                <img src="https://github.com/mdo.png" alt="User" width="30" height="30" class="rounded-circle shadow-sm">
-                <span class="d-none d-sm-inline mx-2">Usuario</span>
+                <img src="<?= base_url('assets/img/img-login.png') ?>" alt="User" width="30" height="30" class="rounded-circle shadow-sm">
+                <span class="d-none d-sm-inline mx-2">Mi perfil</span>
             </a>
             <ul class="dropdown-menu dropdown-menu-dark text-small shadow">
-                <li><a class="dropdown-item" href="#">Configuraciones</a></li>
                 <li><a class="dropdown-item" href="#">Perfil</a></li>
                 <li><hr class="dropdown-divider border-secondary"></li>
-                <li><a class="dropdown-item" href="<?= base_url('/logout') ?>">Salir</a></li>
+                <li><a class="dropdown-item" href="<?= base_url('/') ?>">Salir</a></li>
             </ul>
         </div>
     </div>

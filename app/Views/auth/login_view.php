@@ -47,7 +47,7 @@
                   <div class="form-outline mb-3">
                     <label class="form-label small fw-bold" for="cedula">Cédula</label>
                     <input
-                      type="number"
+                      type="text"
                       id="cedula"
                       name="cedula"
                       class="form-control"
@@ -85,11 +85,8 @@
                   </div>
 
                 </form>
-                <!-- /FORM -->
-
               </div>
             </div>
-
           </div>
         </div>
       </div>

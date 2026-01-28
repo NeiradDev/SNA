@@ -4,6 +4,9 @@ namespace App\Controllers;
 
 use App\Services\AuthService;
 
+use Config\Database;
+
+
 class Auth extends BaseController
 {
     public function login()
@@ -28,7 +31,37 @@ class Auth extends BaseController
 
         if ($result['success'] === false) {
             return view('auth/login_view', [
-                'error' => $result['error'],
+                'error' => 'Completa cédula y password.',
+                'old'   => $this->request->getPost(),
+            ]);
+        }
+
+        $db = Database::connect();
+
+        $sql = '
+            SELECT
+                u.id_user,
+                u.nombres,
+                u.apellidos,
+                u.cedula,
+                u.password,
+                (CASE WHEN u.activo THEN 1 ELSE 0 END) AS activo_int,
+                u.id_area,
+                u.id_agencias,
+                u.id_cargo,
+                c.nombre_cargo
+            FROM public."USER" u
+            LEFT JOIN public.cargo c ON c.id_cargo = u.id_cargo
+            WHERE u.cedula = ?
+            LIMIT 1
+        ';
+
+        $user = $db->query($sql, [$cedula])->getRowArray();
+
+        // Usuario no existe
+        if (!$user) {
+            return view('auth/login_view', [
+                'error' => 'Credenciales incorrectas.',
                 'old'   => ['cedula' => $cedula],
             ]);
         }

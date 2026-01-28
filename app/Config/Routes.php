@@ -16,8 +16,18 @@ $routes->group('', ['filter' => 'auth'], function (RouteCollection $routes) {
     //HOME principal (protegido)
     $routes->get('home', 'Home::home');
 
-    // ===== CRUD users (Users controller) =====
-    $routes->get('users', 'Users::index');
+
+    $routes->get('usuarios', 'Usuarios::index');
+    $routes->get('usuarios', 'Usuarios::index');
+    $routes->get('usuarios', 'Usuarios::index');
+
+    $routes->get('usuarios/nuevo', 'Usuarios::create');
+    $routes->post('usuarios/guardar', 'Usuarios::store');
+    $routes->get('usuarios/editar/(:num)', 'Usuarios::edit/$1');
+    $routes->post('usuarios/actualizar/(:num)', 'Usuarios::update/$1');
+    $routes->get('usuarios/api/cargos', 'Usuarios::getCargosByArea');
+    $routes->get('usuarios/api/supervisores', 'Usuarios::getSupervisorsByArea');
+
 
     // ===== Agencias =====
     $routes->get('agencias', 'Agencias::index');
@@ -32,17 +42,5 @@ $routes->group('', ['filter' => 'auth'], function (RouteCollection $routes) {
     $routes->post('cargos/update/(:num)', 'Cargos::update/$1');
     $routes->post('cargos/delete/(:num)', 'Cargos::delete/$1');
 
-    // ===== Link SNA =====
-    $routes->get('link-sna-horario', 'LinkSnaHorario::index');
-    $routes->post('link-sna-horario/save', 'LinkSnaHorario::save');
-    $routes->get('api/link-sna-status', 'LinkSnaStatus::status');
 
-    // ===== Módulos =====
-    $routes->get('tareas', 'Tareas::index');
-    $routes->get('perfil', 'Perfil::index');
-
-    // ===== Tus rutas en español (Users_crt controller) =====
-    $routes->get('usuarios', 'Users_crt::index');
-    $routes->get('usuarios/nuevo', 'Users_crt::crear');
-    $routes->post('usuarios/guardar', 'Users_crt::store');
 });

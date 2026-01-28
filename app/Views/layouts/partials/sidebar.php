@@ -81,7 +81,7 @@ $menuItems = [
             <ul class="dropdown-menu dropdown-menu-dark text-small shadow">
                 <li><a class="dropdown-item" href="#">Perfil</a></li>
                 <li><hr class="dropdown-divider border-secondary"></li>
-                <li><a class="dropdown-item" href="<?= site_url('logout') ?>">Salir</a></li>
+                <li><a class="dropdown-item" href="<?= base_url('logout/') ?>">Salir</a></li>
             </ul>
         </div>
     </div>

@@ -17,7 +17,7 @@ $menuItems = [
     [
         'title' => 'Agencias',
         'icon'  => 'bi-houses',
-        'url'   => '/home'
+        'url'   => '/agencias'
     ],
     [
         'title' => 'Areas',

@@ -16,34 +16,14 @@ $routes->group('', ['filter' => 'auth'], function (RouteCollection $routes) {
     //HOME principal (protegido)
     $routes->get('home', 'Home::home');
 
-    //Mantienes dashboard (ya no es el principal)
-    $routes->get('dashboard', 'Dashboard::index');
-
     // ===== CRUD users (Users controller) =====
     $routes->get('users', 'Users::index');
-    $routes->get('users/new', 'Users::new');
-    $routes->post('users', 'Users::create');
-
-    $routes->get('users/edit/(:num)', 'Users::edit/$1');
-    $routes->post('users/update/(:num)', 'Users::update/$1');
-    $routes->get('users/toggle/(:num)', 'Users::toggle/$1');
-
-    $routes->get('api/cargos/(:num)', 'Users::cargosByArea/$1');
-    $routes->get('api/supervisores/(:num)', 'Users::supervisoresByArea/$1');
 
     // ===== Agencias =====
     $routes->get('agencias', 'Agencias::index');
-    $routes->post('agencias/create', 'Agencias::create');
-    $routes->get('agencias/edit/(:num)', 'Agencias::edit/$1');
-    $routes->post('agencias/update/(:num)', 'Agencias::update/$1');
-    $routes->get('agencias/delete/(:num)', 'Agencias::delete/$1');
 
     // ===== Areas =====
     $routes->get('areas', 'Areas::index');
-    $routes->post('areas/create', 'Areas::create');
-    $routes->get('areas/edit/(:num)', 'Areas::edit/$1');
-    $routes->post('areas/update/(:num)', 'Areas::update/$1');
-    $routes->post('areas/delete/(:num)', 'Areas::delete/$1');
 
     // ===== Cargos =====
     $routes->get('cargos', 'Cargos::index');

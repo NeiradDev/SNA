@@ -140,10 +140,7 @@
                                 -->
                             </div>
 
-                            <!-- Botón volver a la lista -->
-                            <a href="<?= base_url('usuarios') ?>" class="btn btn-light px-4">
-                                Volver
-                            </a>
+                           
                         </div>
 
                         <hr class="opacity-25 mb-4">

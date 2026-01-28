@@ -25,31 +25,36 @@ class Database extends Config
      * @var array<string, mixed>
      */
     public array $default = [
-        'DSN'          => '',
-        'hostname'     => 'localhost',
-        'username'     => '',
-        'password'     => '',
-        'database'     => '',
-        'DBDriver'     => 'MySQLi',
-        'DBPrefix'     => '',
-        'pConnect'     => false,
-        'DBDebug'      => true,
-        'charset'      => 'utf8mb4',
-        'DBCollat'     => 'utf8mb4_general_ci',
-        'swapPre'      => '',
-        'encrypt'      => false,
-        'compress'     => false,
-        'strictOn'     => false,
-        'failover'     => [],
-        'port'         => 3306,
-        'numberNative' => false,
-        'foundRows'    => false,
-        'dateFormat'   => [
-            'date'     => 'Y-m-d',
-            'datetime' => 'Y-m-d H:i:s',
-            'time'     => 'H:i:s',
-        ],
-    ];
+    'DSN'          => '',
+    'hostname'     => 'localhost',
+    'username'     => '',
+    'password'     => '',
+    'database'     => '',
+    'DBDriver'     => 'Postgre',
+    'DBPrefix'     => '',
+    'pConnect'     => false,
+    'DBDebug'      => true,
+
+    // PostgreSQL
+    'charset'      => 'UTF8',
+    'DBCollat'     => '',
+
+    'swapPre'      => '',
+    'encrypt'      => false,
+    'compress'     => false,
+    'strictOn'     => false,
+    'failover'     => [],
+    'port'         => 5432,
+    'numberNative' => false,
+    'foundRows'    => false,
+    'dateFormat'   => [
+        'date'     => 'Y-m-d',
+        'datetime' => 'Y-m-d H:i:s',
+        'time'     => 'H:i:s',
+    ],
+];
+
+
 
     //    /**
     //     * Sample database connection for SQLite3.
@@ -190,15 +195,29 @@ class Database extends Config
         ],
     ];
 
-    public function __construct()
-    {
-        parent::__construct();
+   public function __construct()
+{
+    parent::__construct();
 
-        // Ensure that we always set the database group to 'tests' if
-        // we are currently running an automated test suite, so that
-        // we don't overwrite live data on accident.
-        if (ENVIRONMENT === 'testing') {
-            $this->defaultGroup = 'tests';
-        }
+    // Cargar valores desde .env (grupo default)
+    $this->default['hostname'] = env('database.default.hostname', $this->default['hostname']);
+    $this->default['database'] = env('database.default.database', $this->default['database']);
+    $this->default['username'] = env('database.default.username', $this->default['username']);
+    $this->default['password'] = env('database.default.password', $this->default['password']);
+    $this->default['DBDriver'] = env('database.default.DBDriver', $this->default['DBDriver']);
+    $this->default['DBPrefix'] = env('database.default.DBPrefix', $this->default['DBPrefix']);
+    $this->default['port']     = (int) env('database.default.port', $this->default['port']);
+    $this->default['charset']  = env('database.default.charset', $this->default['charset']);
+
+    // Asegurar UTF8 para PostgreSQL (evita utf8mb4)
+    if (strtolower($this->default['DBDriver']) === 'postgre') {
+        $this->default['charset'] = 'UTF8';
+        $this->default['DBCollat'] = '';
     }
+
+    // Mantener tests como CI4 lo trae
+    if (ENVIRONMENT === 'testing') {
+        $this->defaultGroup = 'tests';
+    }
+}
 }

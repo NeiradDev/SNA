@@ -4,19 +4,40 @@ namespace App\Models;
 
 use CodeIgniter\Model;
 use CodeIgniter\Database\BaseConnection;
-// use CodeIgniter\HTTP\CURLRequest; // (opcional) si luego tipas el cliente HTTP
 
+/**
+ * ============================================================
+ * Model: UsuarioModel
+ *
+ * Responsabilidad:
+ * - Consultas para listar usuarios (con joins a agencia/área/cargo/supervisor)
+ * - Cargar catálogos (agencias, áreas, cargos por área)
+ * - Cargar supervisores por área (incluye siempre gerencia id_area=1)
+ * - Validar duplicidad de documento
+ * - Insertar y actualizar usuarios guardando el último error de BD
+ *
+ * Nota:
+ * - Mantiene nombres de métodos en inglés básico (estándar del proyecto)
+ * - Nombres visibles/campos en español se manejan en vistas/mensajes
+ * ============================================================
+ */
 class UsuarioModel extends Model
 {
     /**
-     * Guarda el último error de base de datos al fallar un INSERT.
-     * Formato esperado: ['code' => int|string, 'message' => string]
+     * Último error capturado de la base de datos.
+     * Útil para que el Controller muestre mensajes amigables (modal).
+     *
+     * Ejemplo:
+     * [
+     *   'code' => 23505,
+     *   'message' => 'duplicate key value violates unique constraint ...'
+     * ]
      */
     protected ?array $lastDbError = null;
 
     /**
-     * Devuelve una conexión a la base de datos.
-     * Centralizar esto evita repetir \Config\Database::connect() en todos los métodos.
+     * Retorna una conexión a BD.
+     * Centraliza \Config\Database::connect() para no repetirlo en cada método.
      */
     private function getDb(): BaseConnection
     {
@@ -24,9 +45,15 @@ class UsuarioModel extends Model
     }
 
     /**
-     * Lista usuarios para la vista Lista_usuario.php.
+     * ============================================================
+     * getUserList()
+     * Devuelve el listado de usuarios para la vista Lista_usuario.php
      *
-     * Nota: aquí dejamos una opción comentada para consumir una API externa.
+     * - Incluye JOINs para traer nombres de agencia/área/cargo
+     * - Trae el nombre completo del supervisor (si existe)
+     * - Ordena por id_user DESC
+     * - Aplica LIMIT (paginación simple del lado servidor)
+     * ============================================================
      */
     public function getUserList(int $limit = 50): array
     {
@@ -34,14 +61,12 @@ class UsuarioModel extends Model
         // OPCIÓN (COMENTADA): Traer usuarios desde una API externa
         // ============================================================
         // ¿Cuándo usarlo?
-        // - Cuando tu back-end centraliza datos en otro servicio
-        // - Cuando esta app solo consume y muestra información
+        // - Si tu backend está centralizado en otro servicio
+        // - Si esta app solo consume y renderiza datos
         //
         // Requisitos:
-        // - La API debe retornar un JSON array de usuarios
-        // - Cada usuario debe contener las claves que usa tu vista
-        //   (id_user, nombres, apellidos, cedula, activo, nombre_cargo,
-        //    nombre_area, nombre_agencia, supervisor_nombre, etc.)
+        // - La API debe retornar un JSON array
+        // - Cada item debe incluir las mismas claves que usa la vista
         //
         // $apiUrl = 'https://tu-dominio.com/api/usuarios?limit=' . $limit;
         // $token  = 'TU_TOKEN'; // si aplica
@@ -51,7 +76,7 @@ class UsuarioModel extends Model
         // try {
         //     $response = $client->get($apiUrl, [
         //         'headers' => [
-        //             'Accept'        => 'application/json',
+        //             'Accept' => 'application/json',
         //             // 'Authorization' => 'Bearer ' . $token,
         //         ],
         //         'timeout' => 10,
@@ -64,7 +89,7 @@ class UsuarioModel extends Model
         //     $payload = json_decode($response->getBody(), true);
         //     return is_array($payload) ? $payload : [];
         // } catch (\Throwable $e) {
-        //     // Si quieres depurar:
+        //     // Para depurar (opcional):
         //     // $this->lastDbError = ['code' => 0, 'message' => $e->getMessage()];
         //     return [];
         // }
@@ -104,7 +129,8 @@ SQL;
     }
 
     /**
-     * Lista de agencias para llenar el combo.
+     * getAgencies()
+     * Devuelve todas las agencias para poblar el combo "Agencia".
      */
     public function getAgencies(): array
     {
@@ -115,7 +141,8 @@ SQL;
     }
 
     /**
-     * Lista de áreas para llenar el combo.
+     * getAreas()
+     * Devuelve todas las áreas para poblar el combo "Área".
      */
     public function getAreas(): array
     {
@@ -126,7 +153,9 @@ SQL;
     }
 
     /**
-     * Cargos filtrados por área (cargo.id_area es FK).
+     * getCargosByArea()
+     * Devuelve cargos según el área seleccionada.
+     * Usado por el endpoint JSON: /usuarios/api/cargos?id_area=#
      */
     public function getCargosByArea(int $areaId): array
     {
@@ -145,13 +174,12 @@ SQL;
     }
 
     /**
-     * Supervisores filtrados por área seleccionada,
-     * + siempre incluye usuarios de gerencia (id_area = 1) para todas las áreas.
+     * getSupervisorsByArea()
+     * Devuelve supervisores filtrados por área:
+     * - Incluye usuarios del área seleccionada
+     * - Siempre incluye usuarios con id_area = 1 (gerencia) para todas las áreas
      *
-     * Retorna:
-     * - id_user
-     * - id_area
-     * - supervisor_label (Nombre Apellido — Cargo)
+     * Usado por el endpoint JSON: /usuarios/api/supervisores?id_area=#
      */
     public function getSupervisorsByArea(int $areaId): array
     {
@@ -180,8 +208,12 @@ SQL;
     }
 
     /**
-     * Verifica si ya existe el número de documento (cédula o pasaporte/CI/NU).
-     * Importante: este método asume que la columna "cedula" ya es VARCHAR.
+     * docExists()
+     * Verifica si un documento ya existe en la tabla USER.
+     * - Aplica para cédula o pasaporte/CI/NU (alfanumérico).
+     *
+     * Requisito:
+     * - La columna "cedula" en BD debe ser VARCHAR para permitir letras.
      */
     public function docExists(string $docNumber): bool
     {
@@ -199,8 +231,9 @@ SQL;
     }
 
     /**
-     * Retorna el último error de BD capturado en insertUser().
-     * Útil para que el Controller muestre mensajes amigables en el modal.
+     * getLastDbError()
+     * Devuelve el último error de BD capturado por insert/update.
+     * - El Controller lo usa para detectar duplicados u otros problemas.
      */
     public function getLastDbError(): ?array
     {
@@ -208,10 +241,11 @@ SQL;
     }
 
     /**
-     * Inserta un usuario.
+     * insertUser()
+     * Inserta un usuario en BD.
      *
-     * - Mantiene retorno boolean para no romper el Controller actual.
-     * - Si falla, guarda el error de BD en $this->lastDbError.
+     * - Mantiene retorno boolean (no rompe Controllers existentes)
+     * - Si falla, guarda el error en $this->lastDbError
      */
     public function insertUser(array $data): bool
     {
@@ -220,12 +254,70 @@ SQL;
         try {
             $ok = $db->table('public."USER"')->insert($data);
 
-            // Si el builder devuelve false, guardamos error
+            // Si falla, guardamos el error de BD; si no, limpiamos el error anterior
             $this->lastDbError = $ok ? null : $db->error();
 
             return (bool) $ok;
         } catch (\Throwable $e) {
-            // Si hay excepción, guardamos el mensaje para diagnóstico/controlador
+            // Si ocurre excepción, guardamos mensaje para diagnóstico
+            $this->lastDbError = [
+                'code'    => 0,
+                'message' => $e->getMessage(),
+            ];
+            return false;
+        }
+    }
+
+    /**
+     * getUserById()
+     * Devuelve los datos del usuario para edición.
+     * - Se usa en el Controller: edit($id)
+     */
+    public function getUserById(int $id): ?array
+    {
+        $db = $this->getDb();
+
+        $sql = 'SELECT * FROM public."USER" WHERE id_user = ? LIMIT 1';
+        $row = $db->query($sql, [$id])->getRowArray();
+
+        return $row ?: null;
+    }
+
+    /**
+     * docExistsForOtherUser()
+     * Verifica duplicado de documento EXCLUYENDO el usuario actual.
+     * - Se usa en update() para permitir que el usuario mantenga su mismo documento.
+     */
+    public function docExistsForOtherUser(string $docNumber, int $userId): bool
+    {
+        $db = $this->getDb();
+
+        $sql = 'SELECT 1 FROM public."USER" WHERE cedula = ? AND id_user <> ? LIMIT 1';
+        $row = $db->query($sql, [trim($docNumber), $userId])->getRowArray();
+
+        return !empty($row);
+    }
+
+    /**
+     * updateUser()
+     * Actualiza un usuario por id_user.
+     *
+     * - Retorna bool
+     * - Guarda error en $this->lastDbError si falla
+     */
+    public function updateUser(int $id, array $data): bool
+    {
+        $db = $this->getDb();
+
+        try {
+            $ok = $db->table('public."USER"')
+                ->where('id_user', $id)
+                ->update($data);
+
+            $this->lastDbError = $ok ? null : $db->error();
+
+            return (bool) $ok;
+        } catch (\Throwable $e) {
             $this->lastDbError = [
                 'code'    => 0,
                 'message' => $e->getMessage(),
@@ -238,7 +330,7 @@ SQL;
     // OPCIÓN (COMENTADA): Crear usuario mediante API externa
     // ============================================================
     // ¿Cuándo usarlo?
-    // - Si tu creación de usuarios debe hacerse en un servicio central
+    // - Si el alta de usuarios debe hacerse en un servicio central
     //
     // public function insertUserViaApi(array $data): bool
     // {
@@ -250,20 +342,16 @@ SQL;
     //     try {
     //         $response = $client->post($apiUrl, [
     //             'headers' => [
-    //                 'Accept'        => 'application/json',
-    //                 'Content-Type'  => 'application/json',
+    //                 'Accept'       => 'application/json',
+    //                 'Content-Type' => 'application/json',
     //                 // 'Authorization' => 'Bearer ' . $token,
     //             ],
     //             'json' => $data,
     //             'timeout' => 10,
     //         ]);
     //
-    //         // Puedes ajustar a tu estándar de API (201, 200, etc.)
-    //         if (!in_array($response->getStatusCode(), [200, 201], true)) {
-    //             return false;
-    //         }
-    //
-    //         return true;
+    //         // Ajusta a tu estándar (200/201)
+    //         return in_array($response->getStatusCode(), [200, 201], true);
     //     } catch (\Throwable $e) {
     //         $this->lastDbError = ['code' => 0, 'message' => $e->getMessage()];
     //         return false;

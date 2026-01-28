@@ -4,6 +4,9 @@ namespace App\Controllers;
 
 use App\Services\AuthService;
 
+use Config\Database;
+
+
 class Auth extends BaseController
 {
     public function login()

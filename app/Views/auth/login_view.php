@@ -1,11 +1,11 @@
-<?= $this->extend('layouts/main_login') ?> 
+<?= $this->extend('layouts/main_login') ?>
 
 <?= $this->section('titulo') ?>
-    Bestpc SNA
+Bestpc SNA
 <?= $this->endSection() ?>
 
 <?= $this->section('contenido') ?>
-<section class="vh-100" style="background-color: #f4f7f6;"> 
+<section class="vh-100" style="background-color: #f4f7f6;">
   <div class="container py-3 h-100">
     <div class="row d-flex justify-content-center align-items-center h-100">
       <div class="col col-xl-9">
@@ -15,7 +15,7 @@
             <!-- Imagen Lateral -->
             <div class="col-md-5 col-lg-5 d-none d-md-block">
               <img src="<?= base_url('assets/img/img-login.png') ?>"
-                alt="BPC Login" class="img-fluid" 
+                alt="BPC Login" class="img-fluid"
                 style="border-radius: 1rem 0 0 1rem; height: 100%; object-fit: cover;" />
             </div>
 
@@ -35,8 +35,8 @@
 
                   <!-- Logo -->
                   <div class="d-flex align-items-center mb-4">
-                    <img src="<?= base_url('assets/img/logo-bpc.png') ?>" 
-                         alt="Logo" style="width: 360px; height: auto;">
+                    <img src="<?= base_url('assets/img/logo-bpc.png') ?>"
+                      alt="Logo" style="width: 360px; height: auto;">
                   </div>
 
                   <h5 class="fw-bold mb-3 pb-1" style="letter-spacing: -0.5px; color: #1a1a1a;">
@@ -51,10 +51,10 @@
                       id="cedula"
                       name="cedula"
                       class="form-control"
+                      pattern="[0-9]*"
                       required
                       value="<?= esc($old['cedula'] ?? '') ?>"
-                      placeholder="Ingrese su cédula"
-                    />
+                      placeholder="Ingrese su cédula" />
                   </div>
 
                   <div class="form-outline mb-2">
@@ -65,8 +65,7 @@
                       name="password"
                       class="form-control"
                       required
-                      placeholder="••••••••"
-                    />
+                      placeholder="••••••••" />
                   </div>
 
                   <div class="text-end mb-4">
@@ -78,8 +77,7 @@
                     <button
                       type="submit"
                       class="btn btn-dark btn-md w-100 shadow-sm"
-                      style="padding: 10px; border-radius: 0.5rem; font-weight: 600;"
-                    >
+                      style="padding: 10px; border-radius: 0.5rem; font-weight: 600;">
                       Iniciar Sesión
                     </button>
                   </div>

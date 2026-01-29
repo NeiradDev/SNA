@@ -9,38 +9,47 @@ use CodeIgniter\Router\RouteCollection;
 $routes->get('/', 'Auth::login');
 $routes->get('login', 'Auth::login');
 $routes->post('auth/attempt', 'Auth::attempt');
-$routes->get('logout', 'Auth::logout');
+$routes->post('logout', 'Auth::logout');
 
 $routes->group('', ['filter' => 'auth'], function (RouteCollection $routes) {
 
     //HOME principal (protegido)
     $routes->get('home', 'Home::home');
 
+    $routes->get('perfil', 'Perfil::index');
 
-    $routes->get('usuarios', 'Usuarios::index');
-    $routes->get('usuarios', 'Usuarios::index');
-    $routes->get('usuarios', 'Usuarios::index');
+    // ===== Usuarios =====
+    $routes->group('usuarios', function (RouteCollection $routes) {
+        $routes->get('', 'Usuarios::index');
+        $routes->get('nuevo', 'Usuarios::create');
+        $routes->post('guardar', 'Usuarios::store');
+        $routes->get('editar/(:num)', 'Usuarios::edit/$1');
+        $routes->post('actualizar/(:num)', 'Usuarios::update/$1');
+        $routes->get('api/cargos', 'Usuarios::getCargosByArea');
+        $routes->get('api/supervisores', 'Usuarios::getSupervisorsByArea');
+    });
 
-    $routes->get('usuarios/nuevo', 'Usuarios::create');
-    $routes->post('usuarios/guardar', 'Usuarios::store');
-    $routes->get('usuarios/editar/(:num)', 'Usuarios::edit/$1');
-    $routes->post('usuarios/actualizar/(:num)', 'Usuarios::update/$1');
-    $routes->get('usuarios/api/cargos', 'Usuarios::getCargosByArea');
-    $routes->get('usuarios/api/supervisores', 'Usuarios::getSupervisorsByArea');
-
+    // ===== API =====
+    $routes->group('api', function (RouteCollection $routes) {
+        $routes->get('metricas/cumplimiento', 'Api\Metricas::cumplimiento');
+    });
 
     // ===== Agencias =====
-    $routes->get('agencias', 'Agencias::index');
+    $routes->group('agencias', function (RouteCollection $routes) {
+        $routes->get('', 'Agencias::index');
+    });
 
     // ===== Areas =====
-    $routes->get('areas', 'Areas::index');
+    $routes->group('areas', function (RouteCollection $routes) {
+        $routes->get('', 'Areas::index');
+    });
 
     // ===== Cargos =====
-    $routes->get('cargos', 'Cargos::index');
-    $routes->post('cargos/create', 'Cargos::create');
-    $routes->get('cargos/edit/(:num)', 'Cargos::edit/$1');
-    $routes->post('cargos/update/(:num)', 'Cargos::update/$1');
-    $routes->post('cargos/delete/(:num)', 'Cargos::delete/$1');
-
-
+    $routes->group('cargos', function (RouteCollection $routes) {
+        $routes->get('', 'Cargos::index');
+        $routes->post('create', 'Cargos::create');
+        $routes->get('edit/(:num)', 'Cargos::edit/$1');
+        $routes->post('update/(:num)', 'Cargos::update/$1');
+        $routes->post('delete/(:num)', 'Cargos::delete/$1');
+    });
 });

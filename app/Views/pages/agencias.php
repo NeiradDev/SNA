@@ -1,12 +1,12 @@
 <?= $this->extend('layouts/main') ?>
 
 <?= $this->section('titulo') ?>
-    Bestpc SNA - Agencias
+Bestpc SNA - Agencias
 <?= $this->endSection() ?>
 
 <?= $this->section('contenido') ?>
 <div class="container-fluid pt-2">
-    
+
     <div class="d-flex justify-content-between align-items-center mb-4">
         <div>
             <h2 class="fw-bold text-dark mb-0">Gestión de Agencias</h2>
@@ -18,7 +18,7 @@
     </div>
 
     <!-- Mostrar mensajes flash -->
-    <?php if(session()->getFlashdata('success')): ?>
+    <?php if (session()->getFlashdata('success')): ?>
         <div class="alert alert-success alert-dismissible fade show mb-4 border-0 shadow-sm" role="alert">
             <div class="d-flex align-items-center">
                 <i class="bi bi-check-circle-fill me-2"></i>
@@ -27,8 +27,8 @@
             <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
         </div>
     <?php endif; ?>
-    
-    <?php if(session()->getFlashdata('error')): ?>
+
+    <?php if (session()->getFlashdata('error')): ?>
         <div class="alert alert-danger alert-dismissible fade show mb-4 border-0 shadow-sm" role="alert">
             <div class="d-flex align-items-center">
                 <i class="bi bi-exclamation-circle-fill me-2"></i>
@@ -51,25 +51,25 @@
                         </tr>
                     </thead>
                     <tbody>
-                        <?php if(!empty($agencias) && is_array($agencias)): ?>
-                            <?php foreach($agencias as $agencia): ?>
-                            <tr>
-                                <td>
-                                    <div class="fw-bold text-dark"><?= esc($agencia->nombre_agencia) ?></div>
-                                </td>
-                                <td><?= esc($agencia->direccion) ?></td>
-                                <td>
-                                    <span class="badge bg-light text-dark border fw-normal"><?= esc($agencia->ciudad) ?></span>
-                                </td>
-                                <td class="px-4 text-end">
-                                    <div class="btn-group" role="group">
-                                        <a href="<?= site_url('agencias/editar/' . $agencia->id_agencias) ?>" 
-                                           class="btn btn-sm btn-outline-dark border-0">
-                                            <i class="bi bi-pencil-square"></i> Editar
-                                        </a>
-                                    </div>
-                                </td>
-                            </tr>
+                        <?php if (!empty($agencias) && is_array($agencias)): ?>
+                            <?php foreach ($agencias as $agencia): ?>
+                                <tr>
+                                    <td>
+                                        <div class="fw-bold text-dark"><?= esc($agencia->nombre_agencia) ?></div>
+                                    </td>
+                                    <td><?= esc($agencia->direccion) ?></td>
+                                    <td>
+                                        <span class="badge bg-light text-dark border fw-normal"><?= esc($agencia->ciudad) ?></span>
+                                    </td>
+                                    <td class="px-4 text-end">
+                                        <div class="btn-group" role="group">
+                                            <a href="<?= site_url('agencias/editar/' . $agencia->id_agencias) ?>"
+                                                class="btn btn-sm btn-outline-dark border-0">
+                                                <i class="bi bi-pencil-square"></i> Editar
+                                            </a>
+                                        </div>
+                                    </td>
+                                </tr>
                             <?php endforeach; ?>
                         <?php else: ?>
                             <tr>
@@ -90,14 +90,16 @@
 <style>
     /* Efecto suave al pasar el mouse por la fila */
     .table-hover tbody tr:hover {
-        background-color: rgba(0,0,0,.02);
+        background-color: rgba(0, 0, 0, .02);
         cursor: pointer;
     }
+
     /* Estilo para los botones de acción */
     .btn-group .btn {
         border-radius: 4px !important;
         margin-right: 4px;
     }
+
     .btn-group .btn:last-child {
         margin-right: 0;
     }

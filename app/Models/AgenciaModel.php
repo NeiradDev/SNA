@@ -11,14 +11,14 @@ class AgenciaModel extends Model
     protected $allowedFields = ['nombre_agencia', 'direccion', 'ciudad'];
     protected $returnType = 'object';
     protected $useTimestamps = false; // Cambia a true si tienes campos created_at, updated_at
-    
+
     // Si quieres validación automática
     protected $validationRules = [
         'nombre_agencia' => 'required|min_length[3]|max_length[100]',
         'direccion' => 'required|max_length[100]',
         'ciudad' => 'required|max_length[2]'
     ];
-    
+
     protected $validationMessages = [
         'nombre_agencia' => [
             'required' => 'El nombre de la agencia es obligatorio',

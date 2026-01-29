@@ -6,19 +6,38 @@ use App\Models\LoginSqlModel;
 
 class AuthService
 {
-    protected LoginSqlModel $LoginSqlModel;
+    protected LoginSqlModel $userModel;
 
     public function __construct(?LoginSqlModel $LoginSqlModel = null)
     {
         $this->userModel = $LoginSqlModel ?? new LoginSqlModel();
     }
 
-    public function authenticate(int $cedula, string $pass): array
+    public function authenticate(string $cedula, string $pass): array
     {
-        if ($cedula <= 0 || trim($pass) === '') {
+        $cedula = trim($cedula);
+        $pass   = trim($pass);
+
+        if ($cedula === '' || $pass === '') {
             return [
                 'success' => false,
                 'error'   => 'Completa cédula y password.',
+            ];
+        }
+
+        // Solo números, permite 0 al inicio
+        if (!ctype_digit($cedula)) {
+            return [
+                'success' => false,
+                'error'   => 'La cédula debe contener solo números.',
+            ];
+        }
+
+        // Si usas cédula ecuatoriana común (10 dígitos)
+        if (strlen($cedula) !== 10) {
+            return [
+                'success' => false,
+                'error'   => 'La cédula debe tener 10 dígitos.',
             ];
         }
 

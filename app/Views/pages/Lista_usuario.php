@@ -23,7 +23,7 @@
 <style>
     /* Hover suave en filas */
     .table-hover tbody tr:hover {
-        background-color: rgba(0,0,0,.02);
+        background-color: rgba(0, 0, 0, .02);
         cursor: pointer;
     }
 
@@ -38,7 +38,7 @@
     }
 
     /* Layout de botones DataTables (exportación/columnas) */
-    .dataTables_wrapper .dt-buttons{
+    .dataTables_wrapper .dt-buttons {
         display: flex;
         flex-wrap: wrap;
         gap: .5rem;
@@ -46,9 +46,9 @@
     }
 
     /* Botones con bordes definidos (evita “corte” visual dentro del card) */
-    .dataTables_wrapper .dt-buttons .btn{
+    .dataTables_wrapper .dt-buttons .btn {
         border-radius: .5rem !important;
-        border: 1px solid rgba(0,0,0,.25) !important;
+        border: 1px solid rgba(0, 0, 0, .25) !important;
         line-height: 1.2 !important;
         padding: .38rem .75rem !important;
         box-shadow: none !important;
@@ -56,7 +56,7 @@
     }
 
     /* Separación del buscador */
-    .dataTables_wrapper .dataTables_filter{
+    .dataTables_wrapper .dataTables_filter {
         margin-bottom: .5rem;
     }
 
@@ -86,12 +86,12 @@
 <div class="container-fluid pt-2">
 
     <?php
-        /**
-         * Flashdata success:
-         * - El Controller redirige a esta vista con ->with('success', '...')
-         * - Si existe, mostramos un modal de confirmación.
-         */
-        $success = session()->getFlashdata('success');
+    /**
+     * Flashdata success:
+     * - El Controller redirige a esta vista con ->with('success', '...')
+     * - Si existe, mostramos un modal de confirmación.
+     */
+    $success = session()->getFlashdata('success');
     ?>
 
     <!-- ============================================================
@@ -265,7 +265,7 @@
      * - Idioma español
      * - Modal de éxito si existe
      */
-    $(function () {
+    $(function() {
         // 1) DataTable
         $('#usersTable').DataTable({
             responsive: true,
@@ -277,31 +277,52 @@
             lengthMenu: [10, 25, 50, 100],
 
             // Orden por ID oculto (columna 0) DESC
-            order: [[0, 'desc']],
+            order: [
+                [0, 'desc']
+            ],
 
             // Layout: botones a la izquierda, buscador a la derecha
-            dom:
-                "<'row align-items-center g-2'<'col-12 col-md-6 d-flex flex-wrap gap-2'B><'col-12 col-md-6 d-flex justify-content-md-end'f>>" +
+            dom: "<'row align-items-center g-2'<'col-12 col-md-6 d-flex flex-wrap gap-2'B><'col-12 col-md-6 d-flex justify-content-md-end'f>>" +
                 "<'row'<'col-12'tr>>" +
                 "<'row align-items-center g-2'<'col-12 col-md-5'i><'col-12 col-md-7 d-flex justify-content-md-end'p>>",
 
             // Botones de exportación y control de columnas
             buttons: [
-                { extend: 'copy',  text: '<i class="bi bi-clipboard me-1"></i>Copiar', className: 'btn btn-sm btn-dark', exportOptions: { columns: ':not(.no-export)' } },
-                { extend: 'excel', text: '<i class="bi bi-file-earmark-excel me-1"></i>Excel', className: 'btn btn-sm btn-dark', exportOptions: { columns: ':not(.no-export)' } },
-                { extend: 'csv',   text: '<i class="bi bi-filetype-csv me-1"></i>CSV', className: 'btn btn-sm btn-dark', exportOptions: { columns: ':not(.no-export)' } },
-                { extend: 'pdf',   text: '<i class="bi bi-file-earmark-pdf me-1"></i>PDF', className: 'btn btn-sm btn-dark', exportOptions: { columns: ':not(.no-export)' } },
-                { extend: 'print', text: '<i class="bi bi-printer me-1"></i>Imprimir', className: 'btn btn-sm btn-dark', exportOptions: { columns: ':not(.no-export)' } },
-                { extend: 'colvis',text: '<i class="bi bi-layout-three-columns me-1"></i>Columnas', className: 'btn btn-sm btn-outline-dark' }
+                //{ extend: 'copy',  text: '<i class="bi bi-clipboard me-1"></i>Copiar', className: 'btn btn-sm btn-dark', exportOptions: { columns: ':not(.no-export)' } },
+                {
+                    extend: 'excel',
+                    text: '<i class="bi bi-file-earmark-excel me-1"></i>Excel',
+                    className: 'btn btn-sm btn-dark',
+                    exportOptions: {
+                        columns: ':not(.no-export)'
+                    }
+                },
+                //{ extend: 'csv',   text: '<i class="bi bi-filetype-csv me-1"></i>CSV', className: 'btn btn-sm btn-dark', exportOptions: { columns: ':not(.no-export)' } },
+                //{ extend: 'pdf',   text: '<i class="bi bi-file-earmark-pdf me-1"></i>PDF', className: 'btn btn-sm btn-dark', exportOptions: { columns: ':not(.no-export)' } },
+                //{ extend: 'print', text: '<i class="bi bi-printer me-1"></i>Imprimir', className: 'btn btn-sm btn-dark', exportOptions: { columns: ':not(.no-export)' } },
+                {
+                    extend: 'colvis',
+                    text: '<i class="bi bi-layout-three-columns me-1"></i>Columnas',
+                    className: 'btn btn-sm btn-outline-dark'
+                }
             ],
 
             // Definición de columnas
             columnDefs: [
                 // ID oculto (no visible, no searchable)
-                { targets: 0, visible: false, searchable: false },
+                {
+                    targets: 0,
+                    visible: false,
+                    searchable: false
+                },
 
                 // Acciones (última columna): no ordenable, no searchable, no export
-                { targets: -1, orderable: false, searchable: false, className: 'no-export' }
+                {
+                    targets: -1,
+                    orderable: false,
+                    searchable: false,
+                    className: 'no-export'
+                }
             ],
 
             // Idioma en español
@@ -312,7 +333,12 @@
                 info: "Mostrando _START_ a _END_ de _TOTAL_",
                 infoEmpty: "Mostrando 0 a 0 de 0",
                 zeroRecords: "No se encontraron resultados",
-                paginate: { first: "Primero", last: "Último", next: "Siguiente", previous: "Anterior" }
+                paginate: {
+                    first: "Primero",
+                    last: "Último",
+                    next: "Siguiente",
+                    previous: "Anterior"
+                }
             },
 
             // Evita cálculos automáticos de ancho que a veces rompen el layout

@@ -4,9 +4,6 @@ namespace App\Controllers;
 
 use App\Services\AuthService;
 
-use Config\Database;
-
-
 class Auth extends BaseController
 {
     public function login()
@@ -23,46 +20,17 @@ class Auth extends BaseController
 
     public function attempt()
     {
+        // IMPORTANTE: como string para conservar 0 inicial
         $cedula = (string) $this->request->getPost('cedula');
         $pass   = (string) $this->request->getPost('password');
 
         $authService = new AuthService();
         $result = $authService->authenticate($cedula, $pass);
 
-        if ($result['success'] === false) {
+        if (($result['success'] ?? false) === false) {
             return view('auth/login_view', [
-                'error' => 'Completa cédula y password.',
+                'error' => $result['error'] ?? 'No se pudo iniciar sesión.',
                 'old'   => $this->request->getPost(),
-            ]);
-        }
-
-        $db = Database::connect();
-
-        $sql = '
-            SELECT
-                u.id_user,
-                u.nombres,
-                u.apellidos,
-                u.cedula,
-                u.password,
-                (CASE WHEN u.activo THEN 1 ELSE 0 END) AS activo_int,
-                u.id_area,
-                u.id_agencias,
-                u.id_cargo,
-                c.nombre_cargo
-            FROM public."USER" u
-            LEFT JOIN public.cargo c ON c.id_cargo = u.id_cargo
-            WHERE u.cedula = ?
-            LIMIT 1
-        ';
-
-        $user = $db->query($sql, [$cedula])->getRowArray();
-
-        // Usuario no existe
-        if (!$user) {
-            return view('auth/login_view', [
-                'error' => 'Credenciales incorrectas.',
-                'old'   => ['cedula' => $cedula],
             ]);
         }
 
@@ -76,12 +44,12 @@ class Auth extends BaseController
             'id_user'      => (int) $user['id_user'],
             'nombres'      => (string) $user['nombres'],
             'apellidos'    => (string) $user['apellidos'],
-            'cedula'       => (string) $user['cedula'],
+            'cedula'       => (string) $user['cedula'], // conserva 0 inicial
             'id_area'      => $user['id_area'] !== null ? (int) $user['id_area'] : null,
             'id_agencias'  => $user['id_agencias'] !== null ? (int) $user['id_agencias'] : null,
             'id_cargo'     => $user['id_cargo'] !== null ? (int) $user['id_cargo'] : null,
             'cargo_nombre' => (string) ($user['nombre_cargo'] ?? ''),
-            'nivel'        => $nivel,
+            'nivel'        => (string) $nivel,
         ]);
 
         return redirect()->to(site_url('home'));

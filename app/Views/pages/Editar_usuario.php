@@ -4,68 +4,68 @@
 <div class="container-fluid">
 
     <?php
-        /**
-         * ============================================================
-         * Vista: Editar_usuario.php
-         *
-         * Objetivo:
-         * - Mostrar formulario para editar un usuario existente
-         * - Mantener mismo diseño que Crear_usuario.php
-         * - Respetar combos dinámicos:
-         *   Área -> carga Cargos y Supervisores por API (fetch)
-         *
-         * Variables esperadas desde el Controller:
-         * - $usuario  : datos del usuario a editar
-         * - $agencias : lista de agencias
-         * - $areas    : lista de áreas
-         *
-         * Flashdata:
-         * - errors: array de errores devueltos por el Controller para modal
-         * ============================================================
-         */
-        $errors = session()->getFlashdata('errors');
+    /**
+     * ============================================================
+     * Vista: Editar_usuario.php
+     *
+     * Objetivo:
+     * - Mostrar formulario para editar un usuario existente
+     * - Mantener mismo diseño que Crear_usuario.php
+     * - Respetar combos dinámicos:
+     *   Área -> carga Cargos y Supervisores por API (fetch)
+     *
+     * Variables esperadas desde el Controller:
+     * - $usuario  : datos del usuario a editar
+     * - $agencias : lista de agencias
+     * - $areas    : lista de áreas
+     *
+     * Flashdata:
+     * - errors: array de errores devueltos por el Controller para modal
+     * ============================================================
+     */
+    $errors = session()->getFlashdata('errors');
 
-        /**
-         * ============================================================
-         * Valores base del form:
-         * - old() tiene prioridad si el form vuelve por validación fallida
-         * - si no hay old(), usamos los valores reales de $usuario
-         * ============================================================
-         */
-        $userId        = (int) ($usuario['id_user'] ?? 0);
+    /**
+     * ============================================================
+     * Valores base del form:
+     * - old() tiene prioridad si el form vuelve por validación fallida
+     * - si no hay old(), usamos los valores reales de $usuario
+     * ============================================================
+     */
+    $userId        = (int) ($usuario['id_user'] ?? 0);
 
-        $nombresVal    = old('nombres')   ?? ($usuario['nombres']   ?? '');
-        $apellidosVal  = old('apellidos') ?? ($usuario['apellidos'] ?? '');
+    $nombresVal    = old('nombres')   ?? ($usuario['nombres']   ?? '');
+    $apellidosVal  = old('apellidos') ?? ($usuario['apellidos'] ?? '');
 
-        // "cedula" ahora es "documento" (puede ser alfanumérico)
-        $docNumberVal  = old('cedula')    ?? ($usuario['cedula']    ?? '');
+    // "cedula" ahora es "documento" (puede ser alfanumérico)
+    $docNumberVal  = old('cedula')    ?? ($usuario['cedula']    ?? '');
 
-        $agencyVal     = old('id_agencias')   ?? ($usuario['id_agencias']   ?? '');
-        $areaVal       = old('id_area')       ?? ($usuario['id_area']       ?? '');
-        $cargoVal      = old('id_cargo')      ?? ($usuario['id_cargo']      ?? '');
-        $supervisorVal = old('id_supervisor') ?? ($usuario['id_supervisor'] ?? 0);
+    $agencyVal     = old('id_agencias')   ?? ($usuario['id_agencias']   ?? '');
+    $areaVal       = old('id_area')       ?? ($usuario['id_area']       ?? '');
+    $cargoVal      = old('id_cargo')      ?? ($usuario['id_cargo']      ?? '');
+    $supervisorVal = old('id_supervisor') ?? ($usuario['id_supervisor'] ?? 0);
 
-        /**
-         * Activo:
-         * - old('activo') puede ser null si no vino del form
-         * - si es null, tomamos el valor original del usuario
-         */
-        $activoOld = old('activo');
-        $isActive  = ($activoOld === null)
-            ? !empty($usuario['activo'])
-            : (bool) $activoOld;
+    /**
+     * Activo:
+     * - old('activo') puede ser null si no vino del form
+     * - si es null, tomamos el valor original del usuario
+     */
+    $activoOld = old('activo');
+    $isActive  = ($activoOld === null)
+        ? !empty($usuario['activo'])
+        : (bool) $activoOld;
 
-        /**
-         * Tipo de documento:
-         * - Si el usuario vuelve con old('doc_type'), lo respetamos
-         * - Si no, inferimos:
-         *   * si el documento tiene solo números => CEDULA
-         *   * si tiene letras => PASAPORTE
-         */
-        $docTypeVal = old('doc_type');
-        if ($docTypeVal === null) {
-            $docTypeVal = (preg_match('/^\d+$/', (string) $docNumberVal)) ? 'CEDULA' : 'PASAPORTE';
-        }
+    /**
+     * Tipo de documento:
+     * - Si el usuario vuelve con old('doc_type'), lo respetamos
+     * - Si no, inferimos:
+     *   * si el documento tiene solo números => CEDULA
+     *   * si tiene letras => PASAPORTE
+     */
+    $docTypeVal = old('doc_type');
+    if ($docTypeVal === null) {
+        $docTypeVal = (preg_match('/^\d+$/', (string) $docNumberVal)) ? 'CEDULA' : 'PASAPORTE';
+    }
     ?>
 
     <!-- ============================================================
@@ -101,7 +101,7 @@
 
         <script>
             // Abre el modal al cargar para que el usuario vea los errores inmediatamente
-            document.addEventListener('DOMContentLoaded', function () {
+            document.addEventListener('DOMContentLoaded', function() {
                 const modalEl = document.getElementById('feedbackModal');
                 if (modalEl && window.bootstrap) {
                     new bootstrap.Modal(modalEl).show();
@@ -140,7 +140,7 @@
                                 -->
                             </div>
 
-                           
+
                         </div>
 
                         <hr class="opacity-25 mb-4">
@@ -161,8 +161,7 @@
                                     placeholder="Ej. Juan Carlos"
                                     required
                                     maxlength="32"
-                                    value="<?= esc($nombresVal) ?>"
-                                >
+                                    value="<?= esc($nombresVal) ?>">
                             </div>
 
                             <!-- Apellidos -->
@@ -175,8 +174,7 @@
                                     placeholder="Ej. Armas"
                                     required
                                     maxlength="32"
-                                    value="<?= esc($apellidosVal) ?>"
-                                >
+                                    value="<?= esc($apellidosVal) ?>">
                             </div>
 
                             <!-- ============================================================
@@ -201,8 +199,7 @@
                                     class="form-control bg-light border-0"
                                     placeholder="Ingrese el número"
                                     required
-                                    value="<?= esc($docNumberVal) ?>"
-                                >
+                                    value="<?= esc($docNumberVal) ?>">
                                 <div class="form-text small text-muted" id="doc_help"></div>
                             </div>
 
@@ -214,8 +211,7 @@
                                     name="password"
                                     class="form-control bg-light border-0"
                                     placeholder="Dejar vacío para no cambiar"
-                                    autocomplete="new-password"
-                                >
+                                    autocomplete="new-password">
                                 <div class="form-text small text-muted">
                                     Solo se actualizará si escribe una contraseña nueva (mínimo 6 caracteres).
                                 </div>
@@ -237,8 +233,7 @@
                                     <?php foreach (($agencias ?? []) as $ag): ?>
                                         <option
                                             value="<?= esc($ag['id_agencias']) ?>"
-                                            <?= (string) $agencyVal === (string) $ag['id_agencias'] ? 'selected' : '' ?>
-                                        >
+                                            <?= (string) $agencyVal === (string) $ag['id_agencias'] ? 'selected' : '' ?>>
                                             <?= esc($ag['nombre_agencia']) ?>
                                         </option>
                                     <?php endforeach; ?>
@@ -253,8 +248,7 @@
                                     <?php foreach (($areas ?? []) as $ar): ?>
                                         <option
                                             value="<?= esc($ar['id_area']) ?>"
-                                            <?= (string) $areaVal === (string) $ar['id_area'] ? 'selected' : '' ?>
-                                        >
+                                            <?= (string) $areaVal === (string) $ar['id_area'] ? 'selected' : '' ?>>
                                             <?= esc($ar['nombre_area']) ?>
                                         </option>
                                     <?php endforeach; ?>
@@ -285,8 +279,7 @@
                                         type="checkbox"
                                         name="activo"
                                         id="activo"
-                                        <?= $isActive ? 'checked' : '' ?>
-                                    >
+                                        <?= $isActive ? 'checked' : '' ?>>
                                     <label class="form-check-label" for="activo">Usuario Activo</label>
                                 </div>
 
@@ -324,126 +317,130 @@
 </div>
 
 <script>
-(function () {
-    // ============================================================
-    // 1) Reglas del documento (input dinámico)
-    // - Según el tipo seleccionado, limita el input y filtra caracteres
-    // ============================================================
-    const docType   = document.getElementById('doc_type');
-    const docNumber = document.getElementById('doc_number');
-    const docHelp   = document.getElementById('doc_help');
+    (function() {
+        // ============================================================
+        // 1) Reglas del documento (input dinámico)
+        // - Según el tipo seleccionado, limita el input y filtra caracteres
+        // ============================================================
+        const docType = document.getElementById('doc_type');
+        const docNumber = document.getElementById('doc_number');
+        const docHelp = document.getElementById('doc_help');
 
-    function applyDocRules() {
-        const type = docType.value;
+        function applyDocRules() {
+            const type = docType.value;
 
-        // CÉDULA: solo números, max 10
-        if (type === 'CEDULA') {
-            docNumber.value = docNumber.value.replace(/[^0-9]/g, '').slice(0, 10);
-            docNumber.maxLength = 10;
-            docNumber.inputMode = 'numeric';
-            docNumber.placeholder = 'Solo números (10 dígitos)';
-            docHelp.textContent = 'Cédula: solo números, máximo 10 caracteres.';
-            return;
+            // CÉDULA: solo números, max 10
+            if (type === 'CEDULA') {
+                docNumber.value = docNumber.value.replace(/[^0-9]/g, '').slice(0, 10);
+                docNumber.maxLength = 10;
+                docNumber.inputMode = 'numeric';
+                docNumber.placeholder = 'Solo números (10 dígitos)';
+                docHelp.textContent = 'Cédula: solo números, máximo 10 caracteres.';
+                return;
+            }
+
+            // PASAPORTE/CI/NU: alfanumérico, max 15
+            docNumber.value = docNumber.value.replace(/[^a-zA-Z0-9]/g, '').slice(0, 15);
+            docNumber.maxLength = 15;
+            docNumber.inputMode = 'text';
+            docNumber.placeholder = 'Letras y números (hasta 15)';
+            docHelp.textContent = 'Pasaporte/CI/NU: letras y números, máximo 15 caracteres.';
         }
 
-        // PASAPORTE/CI/NU: alfanumérico, max 15
-        docNumber.value = docNumber.value.replace(/[^a-zA-Z0-9]/g, '').slice(0, 15);
-        docNumber.maxLength = 15;
-        docNumber.inputMode = 'text';
-        docNumber.placeholder = 'Letras y números (hasta 15)';
-        docHelp.textContent = 'Pasaporte/CI/NU: letras y números, máximo 15 caracteres.';
-    }
+        // Se aplica al escribir y al cambiar el tipo
+        docNumber.addEventListener('input', applyDocRules);
+        docType.addEventListener('change', applyDocRules);
 
-    // Se aplica al escribir y al cambiar el tipo
-    docNumber.addEventListener('input', applyDocRules);
-    docType.addEventListener('change', applyDocRules);
+        // ============================================================
+        // 2) Combos dinámicos (cargos y supervisores por área)
+        // - Precarga: al entrar, si ya hay un área, carga combos y selecciona valores actuales
+        // - Cambio de área: recarga combos dependientes
+        // ============================================================
+        const areaSelect = document.getElementById('id_area');
+        const cargoSelect = document.getElementById('id_cargo');
+        const supervisorSelect = document.getElementById('id_supervisor');
 
-    // ============================================================
-    // 2) Combos dinámicos (cargos y supervisores por área)
-    // - Precarga: al entrar, si ya hay un área, carga combos y selecciona valores actuales
-    // - Cambio de área: recarga combos dependientes
-    // ============================================================
-    const areaSelect       = document.getElementById('id_area');
-    const cargoSelect      = document.getElementById('id_cargo');
-    const supervisorSelect = document.getElementById('id_supervisor');
+        const cargosUrl = "<?= base_url('usuarios/api/cargos') ?>";
+        const supervisorsUrl = "<?= base_url('usuarios/api/supervisores') ?>";
 
-    const cargosUrl      = "<?= base_url('usuarios/api/cargos') ?>";
-    const supervisorsUrl = "<?= base_url('usuarios/api/supervisores') ?>";
+        // IDs actuales (del usuario) para re-seleccionarlos después del fetch
+        const currentCargoId = "<?= esc((string) $cargoVal) ?>";
+        const currentSupervisorId = "<?= esc((string) $supervisorVal) ?>";
 
-    // IDs actuales (del usuario) para re-seleccionarlos después del fetch
-    const currentCargoId      = "<?= esc((string) $cargoVal) ?>";
-    const currentSupervisorId = "<?= esc((string) $supervisorVal) ?>";
-
-    function resetSelect(selectEl, firstOptionHtml) {
-        selectEl.innerHTML = firstOptionHtml;
-    }
-
-    async function loadCargos(areaId) {
-        resetSelect(cargoSelect, '<option value="">Cargando...</option>');
-
-        const res = await fetch(`${cargosUrl}?id_area=${encodeURIComponent(areaId)}`, {
-            headers: { 'Accept': 'application/json' }
-        });
-
-        const data = await res.json();
-
-        let html = '<option value="">Seleccione...</option>';
-        data.forEach(item => {
-            html += `<option value="${item.id_cargo}">${item.nombre_cargo}</option>`;
-        });
-
-        cargoSelect.innerHTML = html;
-
-        // Selecciona cargo actual (si existe)
-        if (currentCargoId) cargoSelect.value = currentCargoId;
-    }
-
-    async function loadSupervisors(areaId) {
-        supervisorSelect.innerHTML = '<option value="0">Cargando...</option>';
-
-        const res = await fetch(`${supervisorsUrl}?id_area=${encodeURIComponent(areaId)}`, {
-            headers: { 'Accept': 'application/json' }
-        });
-
-        const data = await res.json();
-
-        let html = '<option value="0">Sin Supervisor</option>';
-        data.forEach(item => {
-            html += `<option value="${item.id_user}">${item.supervisor_label}</option>`;
-        });
-
-        supervisorSelect.innerHTML = html;
-
-        // Selecciona supervisor actual (si existe)
-        if (currentSupervisorId) supervisorSelect.value = currentSupervisorId;
-    }
-
-    areaSelect.addEventListener('change', async function () {
-        const areaId = this.value;
-
-        // Si quitan el área, resetea cargos y supervisores
-        if (!areaId) {
-            resetSelect(cargoSelect, '<option value="">Seleccione...</option>');
-            resetSelect(supervisorSelect, '<option value="0">Sin Supervisor</option>');
-            return;
+        function resetSelect(selectEl, firstOptionHtml) {
+            selectEl.innerHTML = firstOptionHtml;
         }
 
-        // Recarga ambos combos en paralelo
-        await Promise.all([loadCargos(areaId), loadSupervisors(areaId)]);
-    });
+        async function loadCargos(areaId) {
+            resetSelect(cargoSelect, '<option value="">Cargando...</option>');
 
-    // Inicialización al cargar la página
-    document.addEventListener('DOMContentLoaded', function () {
-        // 1) Aplica reglas del documento (para placeholder / maxLength)
-        applyDocRules();
+            const res = await fetch(`${cargosUrl}?id_area=${encodeURIComponent(areaId)}`, {
+                headers: {
+                    'Accept': 'application/json'
+                }
+            });
 
-        // 2) Si ya existe un área seleccionada (usuario), precarga combos
-        const initialArea = areaSelect.value;
-        if (initialArea) {
-            Promise.all([loadCargos(initialArea), loadSupervisors(initialArea)]);
+            const data = await res.json();
+
+            let html = '<option value="">Seleccione...</option>';
+            data.forEach(item => {
+                html += `<option value="${item.id_cargo}">${item.nombre_cargo}</option>`;
+            });
+
+            cargoSelect.innerHTML = html;
+
+            // Selecciona cargo actual (si existe)
+            if (currentCargoId) cargoSelect.value = currentCargoId;
         }
-    });
-})();
+
+        async function loadSupervisors(areaId) {
+            supervisorSelect.innerHTML = '<option value="0">Cargando...</option>';
+
+            const res = await fetch(`${supervisorsUrl}?id_area=${encodeURIComponent(areaId)}`, {
+                headers: {
+                    'Accept': 'application/json'
+                }
+            });
+
+            const data = await res.json();
+
+            let html = '<option value="0">Sin Supervisor</option>';
+            data.forEach(item => {
+                html += `<option value="${item.id_user}">${item.supervisor_label}</option>`;
+            });
+
+            supervisorSelect.innerHTML = html;
+
+            // Selecciona supervisor actual (si existe)
+            if (currentSupervisorId) supervisorSelect.value = currentSupervisorId;
+        }
+
+        areaSelect.addEventListener('change', async function() {
+            const areaId = this.value;
+
+            // Si quitan el área, resetea cargos y supervisores
+            if (!areaId) {
+                resetSelect(cargoSelect, '<option value="">Seleccione...</option>');
+                resetSelect(supervisorSelect, '<option value="0">Sin Supervisor</option>');
+                return;
+            }
+
+            // Recarga ambos combos en paralelo
+            await Promise.all([loadCargos(areaId), loadSupervisors(areaId)]);
+        });
+
+        // Inicialización al cargar la página
+        document.addEventListener('DOMContentLoaded', function() {
+            // 1) Aplica reglas del documento (para placeholder / maxLength)
+            applyDocRules();
+
+            // 2) Si ya existe un área seleccionada (usuario), precarga combos
+            const initialArea = areaSelect.value;
+            if (initialArea) {
+                Promise.all([loadCargos(initialArea), loadSupervisors(initialArea)]);
+            }
+        });
+    })();
 </script>
 
 <?= $this->endSection() ?>

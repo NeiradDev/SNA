@@ -1,0 +1,42 @@
+/* ===== Sidebar estático (desktop) ===== */
+.sna-sidebar {
+  background-color: #212529; /* ya tienes bg-dark, refuerzo */
+}
+
+/* Fijar ancho en desktop (≥ md) y evitar que cambie al abrir submenús */
+@media (min-width: 768px) {
+  .sna-sidebar {
+    width: 260px;           /* ancho fijo */
+    flex: 0 0 260px;        /* no crecer/encoger */
+    position: sticky;
+    top: 0;
+    height: 100vh;
+    overflow-y: auto;       /* scroll si es necesario */
+    overflow-x: hidden;     /* evita empuje horizontal */
+  }
+}
+
+/* Que el colapso no empuje el ancho */
+.sna-sidebar .collapse {
+  width: 100%;
+}
+
+/* Evitar que textos largos ensanchen el panel */
+.sna-sidebar .nav-link,
+.sna-sidebar .btn {
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  overflow: hidden;
+}
+
+/* Hover sutil */
+.sna-sidebar .nav-link:hover,
+.sna-sidebar .btn:hover {
+  background-color: rgba(255,255,255,.06);
+  border-radius: .375rem;
+}
+
+/* ===== Offcanvas (móvil) ===== */
+.offcanvas.sna-offcanvas {
+  width: 280px;           /* ancho del offcanvas en móvil */
+}

@@ -28,8 +28,6 @@
                     <?= esc($error) ?>
                   </div>
                 <?php endif; ?>
-
-                <!-- ✅ FORM FUNCIONAL -->
                 <form method="post" action="<?= site_url('auth/attempt') ?>">
                   <?= function_exists('csrf_field') ? csrf_field() : '' ?>
 
@@ -42,8 +40,6 @@
                   <h5 class="fw-bold mb-3 pb-1" style="letter-spacing: -0.5px; color: #1a1a1a;">
                     Ingreso al Sistema
                   </h5>
-
-                  <!-- ✅ Cédula (antes decía email/usuario) -->
                   <div class="form-outline mb-3">
                     <label class="form-label small fw-bold" for="cedula">Cédula</label>
                     <input
@@ -56,7 +52,6 @@
                       placeholder="Ingrese su cédula"
                     />
                   </div>
-
                   <div class="form-outline mb-2">
                     <label class="form-label small fw-bold" for="password">Contraseña</label>
                     <input
@@ -68,11 +63,9 @@
                       placeholder="••••••••"
                     />
                   </div>
-
                   <div class="text-end mb-4">
                     <a class="small text-muted" href="#!">¿Olvidaste tu contraseña?</a>
                   </div>
-
                   <!-- ✅ Botón SUBMIT (no <a>) -->
                   <div class="mb-3">
                     <button
@@ -83,7 +76,6 @@
                       Iniciar Sesión
                     </button>
                   </div>
-
                 </form>
               </div>
             </div>

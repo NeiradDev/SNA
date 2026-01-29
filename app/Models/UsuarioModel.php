@@ -6,38 +6,21 @@ use CodeIgniter\Model;
 use CodeIgniter\Database\BaseConnection;
 
 /**
- * ============================================================
- * Model: UsuarioModel
- *
  * Responsabilidad:
  * - Consultas para listar usuarios (con joins a agencia/área/cargo/supervisor)
  * - Cargar catálogos (agencias, áreas, cargos por área)
  * - Cargar supervisores por área (incluye siempre gerencia id_area=1)
  * - Validar duplicidad de documento
  * - Insertar y actualizar usuarios guardando el último error de BD
- *
- * Nota:
- * - Mantiene nombres de métodos en inglés básico (estándar del proyecto)
- * - Nombres visibles/campos en español se manejan en vistas/mensajes
  * ============================================================
  */
 class UsuarioModel extends Model
 {
-    /**
-     * Último error capturado de la base de datos.
-     * Útil para que el Controller muestre mensajes amigables (modal).
-     *
-     * Ejemplo:
-     * [
-     *   'code' => 23505,
-     *   'message' => 'duplicate key value violates unique constraint ...'
-     * ]
-     */
     protected ?array $lastDbError = null;
 
     /**
      * Retorna una conexión a BD.
-     * Centraliza \Config\Database::connect() para no repetirlo en cada método.
+     * Centraliza para no repetirlo en cada método.
      */
     private function getDb(): BaseConnection
     {
@@ -60,10 +43,6 @@ class UsuarioModel extends Model
         // ============================================================
         // OPCIÓN (COMENTADA): Traer usuarios desde una API externa
         // ============================================================
-        // ¿Cuándo usarlo?
-        // - Si tu backend está centralizado en otro servicio
-        // - Si esta app solo consume y renderiza datos
-        //
         // Requisitos:
         // - La API debe retornar un JSON array
         // - Cada item debe incluir las mismas claves que usa la vista
@@ -127,11 +106,6 @@ SQL;
 
         return $db->query($sql, [$limit])->getResultArray();
     }
-
-    /**
-     * getAgencies()
-     * Devuelve todas las agencias para poblar el combo "Agencia".
-     */
     public function getAgencies(): array
     {
         $db = $this->getDb();
@@ -140,10 +114,6 @@ SQL;
         return $db->query($sql)->getResultArray();
     }
 
-    /**
-     * getAreas()
-     * Devuelve todas las áreas para poblar el combo "Área".
-     */
     public function getAreas(): array
     {
         $db = $this->getDb();
@@ -162,13 +132,13 @@ SQL;
         $db = $this->getDb();
 
         $sql = <<<'SQL'
-SELECT
-    c.id_cargo,
-    c.nombre_cargo
-FROM public.cargo c
-WHERE c.id_area = ?
-ORDER BY c.nombre_cargo ASC
-SQL;
+        SELECT
+            c.id_cargo,
+            c.nombre_cargo
+        FROM public.cargo c
+        WHERE c.id_area = ?
+        ORDER BY c.nombre_cargo ASC
+        SQL;
 
         return $db->query($sql, [$areaId])->getResultArray();
     }
@@ -186,23 +156,23 @@ SQL;
         $db = $this->getDb();
 
         $sql = <<<'SQL'
-SELECT
-    u.id_user,
-    u.id_area,
-    (u.nombres || ' ' || u.apellidos) AS nombre_completo,
-    COALESCE(ca.nombre_cargo, '') AS nombre_cargo,
-    CASE
-        WHEN ca.nombre_cargo IS NULL OR ca.nombre_cargo = '' THEN (u.nombres || ' ' || u.apellidos)
-        ELSE (u.nombres || ' ' || u.apellidos || ' — ' || ca.nombre_cargo)
-    END AS supervisor_label
-FROM public."USER" u
-LEFT JOIN public.cargo ca ON ca.id_cargo = u.id_cargo
-WHERE u.activo = TRUE
-  AND (u.id_area = ? OR u.id_area = 1)
-ORDER BY
-  CASE WHEN u.id_area = 1 THEN 0 ELSE 1 END,
-  supervisor_label ASC
-SQL;
+        SELECT
+            u.id_user,
+            u.id_area,
+            (u.nombres || ' ' || u.apellidos) AS nombre_completo,
+            COALESCE(ca.nombre_cargo, '') AS nombre_cargo,
+            CASE
+                WHEN ca.nombre_cargo IS NULL OR ca.nombre_cargo = '' THEN (u.nombres || ' ' || u.apellidos)
+                ELSE (u.nombres || ' ' || u.apellidos || ' — ' || ca.nombre_cargo)
+            END AS supervisor_label
+        FROM public."USER" u
+        LEFT JOIN public.cargo ca ON ca.id_cargo = u.id_cargo
+        WHERE u.activo = TRUE
+        AND (u.id_area = ? OR u.id_area = 1)
+        ORDER BY
+        CASE WHEN u.id_area = 1 THEN 0 ELSE 1 END,
+        supervisor_label ASC
+        SQL;
 
         return $db->query($sql, [$areaId])->getResultArray();
     }

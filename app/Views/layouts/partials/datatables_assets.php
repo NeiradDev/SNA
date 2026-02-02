@@ -27,18 +27,37 @@
       responsive: true,
       pageLength: 10,
       lengthMenu: [10, 25, 50, 100],
-      order: [[0, 'desc']], // primera col (oculta) por ID desc
-      dom:
-        "<'row align-items-center g-2'<'col-12 col-md-6 d-flex flex-wrap gap-2'B><'col-12 col-md-6 d-flex justify-content-md-end'f>>" +
+      order: [
+        [0, 'desc']
+      ], // primera col (oculta) por ID desc
+      dom: "<'row align-items-center g-2'<'col-12 col-md-6 d-flex flex-wrap gap-2'B><'col-12 col-md-6 d-flex justify-content-md-end'f>>" +
         "<'row'<'col-12'tr>>" +
         "<'row align-items-center g-2'<'col-12 col-md-5'i><'col-12 col-md-7 d-flex justify-content-md-end'p>>",
-      buttons: [
-        { extend: 'excel', text: '<i class="bi bi-file-earmark-excel me-1"></i>Excel', className: 'btn btn-sm btn-dark', exportOptions: { columns: ':not(.no-export)' } },
-        { extend: 'colvis', text: '<i class="bi bi-layout-three-columns me-1"></i>Columnas', className: 'btn btn-sm btn-outline-dark' }
+      buttons: [{
+          extend: 'excel',
+          text: '<i class="bi bi-file-earmark-excel me-1"></i>Excel',
+          className: 'btn btn-sm btn-dark',
+          exportOptions: {
+            columns: ':not(.no-export)'
+          }
+        },
+        {
+          extend: 'colvis',
+          text: '<i class="bi bi-layout-three-columns me-1"></i>Columnas',
+          className: 'btn btn-sm btn-outline-dark'
+        }
       ],
-      columnDefs: [
-        { targets: 0, visible: false, searchable: false }, // ID oculto
-        { targets: -1, orderable: false, searchable: false, className: 'no-export' }, // acciones
+      columnDefs: [{
+          targets: 0,
+          visible: false,
+          searchable: false
+        }, // ID oculto
+        {
+          targets: -1,
+          orderable: false,
+          searchable: false,
+          className: 'no-export'
+        }, // acciones
         ...columnDefs
       ],
       language: {
@@ -48,7 +67,12 @@
         info: "Mostrando _START_ a _END_ de _TOTAL_",
         infoEmpty: "Mostrando 0 a 0 de 0",
         zeroRecords: "No se encontraron resultados",
-        paginate: { first: "Primero", last: "Último", next: "Siguiente", previous: "Anterior" }
+        paginate: {
+          first: "Primero",
+          last: "Último",
+          next: "Siguiente",
+          previous: "Anterior"
+        }
       },
       autoWidth: false
     });

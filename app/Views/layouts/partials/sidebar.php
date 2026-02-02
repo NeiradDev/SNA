@@ -1,45 +1,68 @@
 <?php
+
 $menuItems = [
-    [
-        'title' => 'Dashboard',
-        'icon'  => 'bi-graph-up',
-        'id'    => 'submenu-dashboard',
-        'sub'   => [
-            ['title' => 'Mi Equipo',   'url' => 'dashboard/equipo'],
-            ['title' => 'Mi División', 'url' => 'dashboard/division'],
-        ],
+  [
+    'title' => 'Dashboard',
+    'icon'  => 'bi-graph-up',
+    'id'    => 'submenu-dashboard',
+    'sub'   => [
+      ['title' => 'Mi Equipo',   'url' => 'dashboard/equipo'],
+      ['title' => 'Mi División', 'url' => 'dashboard/division'],
     ],
-    [
-        'title' => 'Reporte',
-        'icon'  => 'bi-clipboard2-data',
-        'id'    => 'submenu-reporte',
-        'sub'   => [
-            ['title' => 'Plan de Batalla', 'url' => 'reporte/plan'],
-            ['title' => 'Histórico',       'url' => 'reporte/historico'],
-        ],
+  ],
+  [
+    'title' => 'Reporte',
+    'icon'  => 'bi-clipboard2-data',
+    'id'    => 'submenu-reporte',
+    'sub'   => [
+      ['title' => 'Plan de Batalla', 'url' => 'reporte/plan'],
+      ['title' => 'Histórico',       'url' => 'reporte/historico'],
     ],
-    [
-        'title' => 'Agencias',
-        'icon'  => 'bi-houses',
-        'url'   => 'agencias'
+  ],
+  [
+    'title' => 'Agencias',
+    'icon'  => 'bi-houses',
+    'url'   => 'agencias'
+  ],
+  [
+    'title' => 'Áreas',
+    'icon'  => 'bi-grid',
+    'id'    => 'submenu-areas',
+    'sub'   => [
+      ['title' => 'TICs',           'url' => 'areas/tics'],
+      ['title' => 'Contabilidad',   'url' => 'areas/contabilidad'],
+      ['title' => 'Talento Humano', 'url' => 'areas/talento-humano'],
     ],
-    [
-        'title' => 'Áreas',
-        'icon'  => 'bi-grid',
-        'id'    => 'submenu-areas',
-        'sub'   => [
-            ['title' => 'TICs',           'url' => 'areas/tics'],
-            ['title' => 'Contabilidad',   'url' => 'areas/contabilidad'],
-            ['title' => 'Talento Humano', 'url' => 'areas/talento-humano'],
-        ],
+  ],
+  [
+    'title' => 'Tareas',
+    'icon'  => 'bi-calendar-check',
+    'id'    => 'submenu-tareas',
+    'sub'   => [
+      ['title' => 'Calendario', 'url' => 'tareas/calendario'],
+      ['title' => 'Asignar',    'url' => 'tareas/asignar'],
     ],
-    [
-        'title' => 'Usuarios',
-        'icon'  => 'bi-people',
-        'url'   => 'usuarios'
-    ],
+  ],
+  [
+    'title' => 'Usuarios',
+    'icon'  => 'bi-people',
+    'url'   => 'usuarios'
+  ],
 ];
+
+// ✅ Extender el submenu Áreas desde BD (sin duplicar)
+helper('menu');
+$menuItems = menu_build_items($menuItems);
+
+// ✅ Perfil: jalar nombre de sesión
+$logged    = (bool) session()->get('logged_in');
+$nombres   = (string) session()->get('nombres');
+$apellidos = (string) session()->get('apellidos');
+
+$nombreCompleto = trim($nombres . ' ' . $apellidos);
+$labelPerfil    = ($logged && $nombreCompleto !== '') ? $nombreCompleto : 'Mi perfil';
 ?>
+
 <!-- ===== Sidebar fijo (desktop) ===== -->
 <aside class="sna-sidebar col-auto px-sm-2 px-0 bg-dark d-none d-md-block" aria-label="Menú principal">
   <div class="d-flex flex-column align-items-center align-items-sm-start px-3 pt-2 text-white min-vh-100">
@@ -54,7 +77,11 @@ $menuItems = [
           <li class="nav-item w-100">
             <?php if (!empty($item['sub']) && is_array($item['sub'])): ?>
               <!-- Padre colapsable -->
-              <a href="#<?= esc($item['id']) ?>" data-bs-toggle="collapse" class="nav-link px-0 align-middle text-white" aria-expanded="false" aria-controls="<?= esc($item['id']) ?>">
+              <a href="#<?= esc($item['id']) ?>"
+                data-bs-toggle="collapse"
+                class="nav-link px-0 align-middle text-white"
+                aria-expanded="false"
+                aria-controls="<?= esc($item['id']) ?>">
                 <i class="fs-4 <?= esc($item['icon']) ?>"></i>
                 <span class="ms-1 d-none d-sm-inline"><?= esc($item['title']) ?></span>
               </a>
@@ -92,26 +119,41 @@ $menuItems = [
 
     <hr class="w-100 border-secondary">
 
+    <!-- ✅ PERFIL (DESKTOP) -->
     <div class="dropdown pb-4 w-100">
-      <a href="#" class="d-flex align-items-center text-white text-decoration-none dropdown-toggle" id="dropdownUser" data-bs-toggle="dropdown" aria-expanded="false">
+      <a href="<?= $logged ? '#' : 'javascript:void(0)' ?>"
+        class="d-flex align-items-center text-white text-decoration-none dropdown-toggle <?= $logged ? '' : 'disabled' ?>"
+        id="dropdownUser"
+        data-bs-toggle="dropdown"
+        aria-expanded="false">
         <img src="<?= base_url('assets/img/img-login.png') ?>" alt="User" width="30" height="30" class="rounded-circle shadow-sm">
-        <span class="d-none d-sm-inline mx-2">Mi perfil</span>
+        <span class="d-none d-sm-inline mx-2"><?= esc($labelPerfil) ?></span>
       </a>
+
       <ul class="dropdown-menu dropdown-menu-dark text-small shadow" aria-labelledby="dropdownUser">
-        <li><a class="dropdown-item" href="#">Perfil</a></li>
-        <li><hr class="dropdown-divider border-secondary"></li>
-        <li><a class="dropdown-item" href="<?= base_url('logout/') ?>">Salir</a></li>
+        <li>
+          <a class="dropdown-item <?= $logged ? '' : 'disabled' ?>"
+            href="<?= $logged ? base_url('perfil') : '#' ?>">
+            Perfil
+          </a>
+        </li>
+        <li>
+          <hr class="dropdown-divider border-secondary">
+        </li>
+        <li><a class="dropdown-item" href="<?= base_url('logout') ?>">Salir</a></li>
       </ul>
     </div>
 
   </div>
 </aside>
+
 <!-- ===== Offcanvas (móvil) ===== -->
 <div class="offcanvas offcanvas-start text-bg-dark sna-offcanvas d-md-none" tabindex="-1" id="snaOffcanvas" aria-labelledby="snaOffcanvasLabel">
   <div class="offcanvas-header">
     <h5 class="offcanvas-title" id="snaOffcanvasLabel">Menú</h5>
     <button type="button" class="btn-close btn-close-white" data-bs-dismiss="offcanvas" aria-label="Cerrar"></button>
   </div>
+
   <div class="offcanvas-body d-flex flex-column">
 
     <a href="<?= base_url('home') ?>" class="d-flex align-items-center text-white text-decoration-none mb-3">
@@ -123,26 +165,35 @@ $menuItems = [
         <li class="nav-item w-100 mb-1">
           <?php if (!empty($item['sub']) && is_array($item['sub'])): ?>
             <button class="btn w-100 text-start text-white d-flex align-items-center gap-2"
-                    data-bs-toggle="collapse" data-bs-target="#m-<?= esc($item['id']) ?>" aria-expanded="false" aria-controls="m-<?= esc($item['id']) ?>">
+              data-bs-toggle="collapse"
+              data-bs-target="#m-<?= esc($item['id']) ?>"
+              aria-expanded="false"
+              aria-controls="m-<?= esc($item['id']) ?>">
               <i class="fs-5 <?= esc($item['icon']) ?>"></i><span><?= esc($item['title']) ?></span>
             </button>
 
             <ul id="m-<?= esc($item['id']) ?>" class="collapse nav flex-column ms-4 mt-1">
               <?php if (!empty($item['url'])): ?>
                 <li>
-                  <a class="nav-link text-white-50 py-1" href="<?= base_url($item['url']) ?>" data-bs-dismiss="offcanvas">› <?= esc($item['title']) ?> (inicio)</a>
+                  <a class="nav-link text-white-50 py-1" href="<?= base_url($item['url']) ?>" data-bs-dismiss="offcanvas">
+                    › <?= esc($item['title']) ?> (inicio)
+                  </a>
                 </li>
               <?php endif; ?>
 
               <?php foreach ($item['sub'] as $sub): ?>
                 <li>
-                  <a class="nav-link text-white-50 py-1" href="<?= base_url($sub['url']) ?>" data-bs-dismiss="offcanvas">› <?= esc($sub['title']) ?></a>
+                  <a class="nav-link text-white-50 py-1" href="<?= base_url($sub['url']) ?>" data-bs-dismiss="offcanvas">
+                    › <?= esc($sub['title']) ?>
+                  </a>
                 </li>
               <?php endforeach; ?>
             </ul>
 
           <?php else: ?>
-            <a class="nav-link text-white d-flex align-items-center gap-2" href="<?= base_url($item['url'] ?? '#') ?>" data-bs-dismiss="offcanvas">
+            <a class="nav-link text-white d-flex align-items-center gap-2"
+              href="<?= base_url($item['url'] ?? '#') ?>"
+              data-bs-dismiss="offcanvas">
               <i class="fs-5 <?= esc($item['icon']) ?>"></i><span><?= esc($item['title']) ?></span>
             </a>
           <?php endif; ?>
@@ -152,15 +203,28 @@ $menuItems = [
 
     <hr class="border-secondary">
 
+    <!-- ✅ PERFIL (MÓVIL) -->
     <div class="mt-auto">
-      <a href="#" class="d-flex align-items-center text-white text-decoration-none dropdown-toggle" id="dropdownUserMobile" data-bs-toggle="dropdown" aria-expanded="false">
+      <a href="<?= $logged ? '#' : 'javascript:void(0)' ?>"
+        class="d-flex align-items-center text-white text-decoration-none dropdown-toggle <?= $logged ? '' : 'disabled' ?>"
+        id="dropdownUserMobile"
+        data-bs-toggle="dropdown"
+        aria-expanded="false">
         <img src="<?= base_url('assets/img/img-login.png') ?>" alt="User" width="30" height="30" class="rounded-circle shadow-sm">
-        <span class="mx-2">Mi perfil</span>
+        <span class="mx-2"><?= esc($labelPerfil) ?></span>
       </a>
+
       <ul class="dropdown-menu dropdown-menu-dark text-small shadow" aria-labelledby="dropdownUserMobile">
-        <li><a class="dropdown-item" href="#">Perfil</a></li>
-        <li><hr class="dropdown-divider border-secondary"></li>
-        <li><a class="dropdown-item" href="<?= base_url('logout/') ?>">Salir</a></li>
+        <li>
+          <a class="dropdown-item <?= $logged ? '' : 'disabled' ?>"
+            href="<?= $logged ? base_url('perfil') : '#' ?>">
+            Perfil
+          </a>
+        </li>
+        <li>
+          <hr class="dropdown-divider border-secondary">
+        </li>
+        <li><a class="dropdown-item" href="<?= base_url('logout') ?>">Salir</a></li>
       </ul>
     </div>
 

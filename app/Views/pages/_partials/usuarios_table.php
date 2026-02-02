@@ -19,14 +19,16 @@
         <?php foreach ($usuarios as $user): ?>
           <tr>
             <td class="px-4 d-none"><?= esc($user['id_user']) ?></td>
-            <td><div class="fw-bold text-dark"><?= esc(($user['nombres']??'').' '.($user['apellidos']??'')) ?></div></td>
+            <td>
+              <div class="fw-bold text-dark"><?= esc(($user['nombres'] ?? '') . ' ' . ($user['apellidos'] ?? '')) ?></div>
+            </td>
             <td><?= esc($user['cedula'] ?? '') ?></td>
             <td><span class="badge bg-light text-dark border fw-normal"><?= esc($user['nombre_cargo'] ?? $user['id_cargo'] ?? '—') ?></span></td>
             <td><?= esc($user['nombre_area'] ?? '—') ?></td>
             <td><?= esc($user['supervisor_nombre'] ?? '—') ?></td>
             <td><?= esc($user['nombre_agencia'] ?? '—') ?></td>
             <td><?= badge_estado($user['activo'] ?? 0) ?></td>
-            <td class="px-4 text-end"><?= btn_outline_edit(base_url('usuarios/editar/'.($user['id_user']??0))) ?></td>
+            <td class="px-4 text-end"><?= btn_outline_edit(base_url('usuarios/editar/' . ($user['id_user'] ?? 0))) ?></td>
           </tr>
         <?php endforeach; ?>
       <?php else: ?>

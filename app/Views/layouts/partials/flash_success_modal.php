@@ -21,8 +21,8 @@ if (!$success) return;
     </div>
 </div>
 <script>
-document.addEventListener('DOMContentLoaded', () => {
-  const el = document.getElementById('successModal');
-  if (el && window.bootstrap) new bootstrap.Modal(el).show();
-});
+    document.addEventListener('DOMContentLoaded', () => {
+        const el = document.getElementById('successModal');
+        if (el && window.bootstrap) new bootstrap.Modal(el).show();
+    });
 </script>

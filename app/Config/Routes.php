@@ -9,7 +9,7 @@ use CodeIgniter\Router\RouteCollection;
 $routes->get('/', 'Auth::login');
 $routes->get('login', 'Auth::login');
 $routes->post('auth/attempt', 'Auth::attempt');
-$routes->post('logout', 'Auth::logout');
+$routes->get('logout', 'Auth::logout');
 
 $routes->group('', ['filter' => 'auth'], function (RouteCollection $routes) {
 
@@ -51,5 +51,19 @@ $routes->group('', ['filter' => 'auth'], function (RouteCollection $routes) {
         $routes->get('edit/(:num)', 'Cargos::edit/$1');
         $routes->post('update/(:num)', 'Cargos::update/$1');
         $routes->post('delete/(:num)', 'Cargos::delete/$1');
+    });
+        $routes->get('areas/(:segment)', 'Areas::view/$1');
+        $routes->get('areas/orgchart-data/(:segment)', 'Areas::data/$1');
+        $routes->get('reporte/plan', 'Reporte::plan');
+        $routes->post('reporte/plan', 'Reporte::storePlan');
+        $routes->group('tareas', function ($routes) {
+        $routes->get('calendario', 'Tareas::calendario');
+        $routes->get('asignar', 'Tareas::asignarForm');
+        $routes->post('asignar', 'Tareas::asignarStore');
+
+        // API
+        $routes->get('events', 'Tareas::events'); // ?scope=mine|assigned
+        $routes->get('users-by-area/(:num)', 'Tareas::usersByArea/$1');
+        $routes->post('completar/(:num)', 'Tareas::marcarCumplida/$1');
     });
 });

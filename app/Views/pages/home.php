@@ -1,7 +1,7 @@
 <?= $this->extend('layouts/main') ?>
 
 <?= $this->section('styles') ?>
-  <?= view('pages/_partials/estilos_metricas', ['part' => 'css']) ?>
+<?= view('pages/_partials/estilos_metricas', ['part' => 'css']) ?>
 <?= $this->endSection() ?>
 
 <?= $this->section('contenido') ?>
@@ -57,5 +57,5 @@
 <?= $this->endSection() ?>
 
 <?= $this->section('scripts') ?>
-  <?= view('pages/_partials/estilos_metricas', ['part' => 'js']) ?>
+<?= view('pages/_partials/estilos_metricas', ['part' => 'js']) ?>
 <?= $this->endSection() ?>

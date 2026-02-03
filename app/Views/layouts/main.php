@@ -16,7 +16,7 @@
 <body class="bg-light">
 
 <div class="container-fluid">
-    <div class="row flex-md-nowrap"><!-- 👈 antes era flex-nowrap -->
+    <div class="row flex-md-nowrap">
         <?= view('layouts/partials/sidebar') ?>
 
         <main class="col py-3 px-md-4">

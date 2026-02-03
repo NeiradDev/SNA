@@ -1,4 +1,14 @@
 <?php
+/**
+ * Sidebar principal.
+ * 
+ * ✅ Importante:
+ * - Para “habilitar sin refrescar”, el link debe existir siempre en el HTML.
+ * - Por eso NO lo eliminamos con array_filter.
+ * - Lo ocultamos/mostramos con JS consultando /api/horario-plan/status.
+ */
+
+helper('horario_plan');
 
 $menuItems = [
   [
@@ -10,15 +20,29 @@ $menuItems = [
       ['title' => 'Mi División', 'url' => 'dashboard/division'],
     ],
   ],
-  [
-    'title' => 'Reporte',
-    'icon'  => 'bi-clipboard2-data',
-    'id'    => 'submenu-reporte',
-    'sub'   => [
-      ['title' => 'Plan de Batalla', 'url' => 'reporte/plan'],
-      ['title' => 'Histórico',       'url' => 'reporte/historico'],
+ [
+  'title' => 'Reporte',
+  'icon'  => 'bi-clipboard2-data',
+  'id'    => 'submenu-reporte',
+  'sub'   => [
+    // ✅ SIEMPRE existe el link de Plan (se oculta/mostrar por horario)
+    [
+      'title'           => 'Plan de Batalla',
+      'url'             => 'reporte/plan',
+      'schedule_key'    => 'plan',
+      'initial_visible' => isPlanEnabled(),
     ],
+
+    // ✅ SIEMPRE visible: aquí editas el horario (ADMIN)
+    [
+      'title' => 'Horario Plan',
+      'url'   => 'reporte/horario-plan',
+    ],
+
+    // ✅ SIEMPRE visible
+    ['title' => 'Histórico', 'url' => 'reporte/historico'],
   ],
+],
   [
     'title' => 'Agencias',
     'icon'  => 'bi-houses',
@@ -50,11 +74,16 @@ $menuItems = [
   ],
 ];
 
-// ✅ Extender el submenu Áreas desde BD (sin duplicar)
+/**
+ * ✅ Extender el submenu Áreas desde BD (sin duplicar)
+ * NOTA: Esto puede agregar items sin schedule_key, y está bien.
+ */
 helper('menu');
 $menuItems = menu_build_items($menuItems);
 
-// ✅ Perfil: jalar nombre de sesión
+/**
+ * ✅ Perfil: jalar nombre de sesión
+ */
 $logged    = (bool) session()->get('logged_in');
 $nombres   = (string) session()->get('nombres');
 $apellidos = (string) session()->get('apellidos');
@@ -78,17 +107,16 @@ $labelPerfil    = ($logged && $nombreCompleto !== '') ? $nombreCompleto : 'Mi pe
             <?php if (!empty($item['sub']) && is_array($item['sub'])): ?>
               <!-- Padre colapsable -->
               <a href="#<?= esc($item['id']) ?>"
-                data-bs-toggle="collapse"
-                class="nav-link px-0 align-middle text-white"
-                aria-expanded="false"
-                aria-controls="<?= esc($item['id']) ?>">
+                 data-bs-toggle="collapse"
+                 class="nav-link px-0 align-middle text-white"
+                 aria-expanded="false"
+                 aria-controls="<?= esc($item['id']) ?>">
                 <i class="fs-4 <?= esc($item['icon']) ?>"></i>
                 <span class="ms-1 d-none d-sm-inline"><?= esc($item['title']) ?></span>
               </a>
 
               <ul class="collapse nav flex-column ms-3" id="<?= esc($item['id']) ?>" data-bs-parent="#menu">
                 <?php if (!empty($item['url'])): ?>
-                  <!-- Link a la vista principal del grupo (opcional) -->
                   <li class="w-100">
                     <a href="<?= base_url($item['url']) ?>" class="nav-link px-0 text-white-50 small font-monospace">
                       <span class="d-none d-sm-inline">› </span><?= esc($item['title']) ?> (inicio)
@@ -97,8 +125,21 @@ $labelPerfil    = ($logged && $nombreCompleto !== '') ? $nombreCompleto : 'Mi pe
                 <?php endif; ?>
 
                 <?php foreach ($item['sub'] as $sub): ?>
+                  <?php
+                    /**
+                     * ✅ Soporte de items programables:
+                     * - schedule_key: etiqueta data-schedule
+                     * - initial_visible: se oculta al render si false
+                     */
+                    $scheduleKey = $sub['schedule_key'] ?? null;
+                    $initialVisible = $sub['initial_visible'] ?? true;
+                    $style = $initialVisible ? '' : 'display:none;';
+                  ?>
                   <li class="w-100">
-                    <a href="<?= base_url($sub['url']) ?>" class="nav-link px-0 text-white-50 small font-monospace">
+                    <a href="<?= base_url($sub['url']) ?>"
+                       class="nav-link px-0 text-white-50 small font-monospace"
+                       <?= $scheduleKey ? 'data-schedule="'.esc($scheduleKey).'"' : '' ?>
+                       style="<?= esc($style) ?>">
                       <span class="d-none d-sm-inline">› </span><?= esc($sub['title']) ?>
                     </a>
                   </li>
@@ -122,24 +163,21 @@ $labelPerfil    = ($logged && $nombreCompleto !== '') ? $nombreCompleto : 'Mi pe
     <!-- ✅ PERFIL (DESKTOP) -->
     <div class="dropdown pb-4 w-100">
       <a href="<?= $logged ? '#' : 'javascript:void(0)' ?>"
-        class="d-flex align-items-center text-white text-decoration-none dropdown-toggle <?= $logged ? '' : 'disabled' ?>"
-        id="dropdownUser"
-        data-bs-toggle="dropdown"
-        aria-expanded="false">
+         class="d-flex align-items-center text-white text-decoration-none dropdown-toggle <?= $logged ? '' : 'disabled' ?>"
+         id="dropdownUser"
+         data-bs-toggle="dropdown"
+         aria-expanded="false">
         <img src="<?= base_url('assets/img/img-login.png') ?>" alt="User" width="30" height="30" class="rounded-circle shadow-sm">
         <span class="d-none d-sm-inline mx-2"><?= esc($labelPerfil) ?></span>
       </a>
 
       <ul class="dropdown-menu dropdown-menu-dark text-small shadow" aria-labelledby="dropdownUser">
         <li>
-          <a class="dropdown-item <?= $logged ? '' : 'disabled' ?>"
-            href="<?= $logged ? base_url('perfil') : '#' ?>">
+          <a class="dropdown-item <?= $logged ? '' : 'disabled' ?>" href="<?= $logged ? base_url('perfil') : '#' ?>">
             Perfil
           </a>
         </li>
-        <li>
-          <hr class="dropdown-divider border-secondary">
-        </li>
+        <li><hr class="dropdown-divider border-secondary"></li>
         <li><a class="dropdown-item" href="<?= base_url('logout') ?>">Salir</a></li>
       </ul>
     </div>
@@ -165,10 +203,10 @@ $labelPerfil    = ($logged && $nombreCompleto !== '') ? $nombreCompleto : 'Mi pe
         <li class="nav-item w-100 mb-1">
           <?php if (!empty($item['sub']) && is_array($item['sub'])): ?>
             <button class="btn w-100 text-start text-white d-flex align-items-center gap-2"
-              data-bs-toggle="collapse"
-              data-bs-target="#m-<?= esc($item['id']) ?>"
-              aria-expanded="false"
-              aria-controls="m-<?= esc($item['id']) ?>">
+                    data-bs-toggle="collapse"
+                    data-bs-target="#m-<?= esc($item['id']) ?>"
+                    aria-expanded="false"
+                    aria-controls="m-<?= esc($item['id']) ?>">
               <i class="fs-5 <?= esc($item['icon']) ?>"></i><span><?= esc($item['title']) ?></span>
             </button>
 
@@ -182,8 +220,17 @@ $labelPerfil    = ($logged && $nombreCompleto !== '') ? $nombreCompleto : 'Mi pe
               <?php endif; ?>
 
               <?php foreach ($item['sub'] as $sub): ?>
+                <?php
+                  $scheduleKey = $sub['schedule_key'] ?? null;
+                  $initialVisible = $sub['initial_visible'] ?? true;
+                  $style = $initialVisible ? '' : 'display:none;';
+                ?>
                 <li>
-                  <a class="nav-link text-white-50 py-1" href="<?= base_url($sub['url']) ?>" data-bs-dismiss="offcanvas">
+                  <a class="nav-link text-white-50 py-1"
+                     href="<?= base_url($sub['url']) ?>"
+                     data-bs-dismiss="offcanvas"
+                     <?= $scheduleKey ? 'data-schedule="'.esc($scheduleKey).'"' : '' ?>
+                     style="<?= esc($style) ?>">
                     › <?= esc($sub['title']) ?>
                   </a>
                 </li>
@@ -192,8 +239,8 @@ $labelPerfil    = ($logged && $nombreCompleto !== '') ? $nombreCompleto : 'Mi pe
 
           <?php else: ?>
             <a class="nav-link text-white d-flex align-items-center gap-2"
-              href="<?= base_url($item['url'] ?? '#') ?>"
-              data-bs-dismiss="offcanvas">
+               href="<?= base_url($item['url'] ?? '#') ?>"
+               data-bs-dismiss="offcanvas">
               <i class="fs-5 <?= esc($item['icon']) ?>"></i><span><?= esc($item['title']) ?></span>
             </a>
           <?php endif; ?>
@@ -206,27 +253,71 @@ $labelPerfil    = ($logged && $nombreCompleto !== '') ? $nombreCompleto : 'Mi pe
     <!-- ✅ PERFIL (MÓVIL) -->
     <div class="mt-auto">
       <a href="<?= $logged ? '#' : 'javascript:void(0)' ?>"
-        class="d-flex align-items-center text-white text-decoration-none dropdown-toggle <?= $logged ? '' : 'disabled' ?>"
-        id="dropdownUserMobile"
-        data-bs-toggle="dropdown"
-        aria-expanded="false">
+         class="d-flex align-items-center text-white text-decoration-none dropdown-toggle <?= $logged ? '' : 'disabled' ?>"
+         id="dropdownUserMobile"
+         data-bs-toggle="dropdown"
+         aria-expanded="false">
         <img src="<?= base_url('assets/img/img-login.png') ?>" alt="User" width="30" height="30" class="rounded-circle shadow-sm">
         <span class="mx-2"><?= esc($labelPerfil) ?></span>
       </a>
 
       <ul class="dropdown-menu dropdown-menu-dark text-small shadow" aria-labelledby="dropdownUserMobile">
         <li>
-          <a class="dropdown-item <?= $logged ? '' : 'disabled' ?>"
-            href="<?= $logged ? base_url('perfil') : '#' ?>">
+          <a class="dropdown-item <?= $logged ? '' : 'disabled' ?>" href="<?= $logged ? base_url('perfil') : '#' ?>">
             Perfil
           </a>
         </li>
-        <li>
-          <hr class="dropdown-divider border-secondary">
-        </li>
+        <li><hr class="dropdown-divider border-secondary"></li>
         <li><a class="dropdown-item" href="<?= base_url('logout') ?>">Salir</a></li>
       </ul>
     </div>
 
   </div>
 </div>
+
+<script>
+/**
+ * ✅ Mostrar/Ocultar “Plan de Batalla” SIN refrescar página.
+ * - Consulta /api/horario-plan/status cada 5 segundos.
+ * - enabled=true => muestra data-schedule="plan"
+ * - enabled=false => oculta
+ */
+(function planMenuAutoToggle() {
+
+ const statusUrl = "<?= site_url('reporte/plan-status') ?>";
+  /**
+   * Función en inglés básico: setPlanVisibility
+   */
+  function setPlanVisibility(isEnabled) {
+    document.querySelectorAll('[data-schedule="plan"]').forEach(el => {
+      el.style.display = isEnabled ? '' : 'none';
+    });
+  }
+
+  /**
+   * Función en inglés básico: refreshPlanStatus
+   */
+  async function refreshPlanStatus() {
+    try {
+      const res = await fetch(statusUrl, {
+        headers: { 'X-Requested-With': 'XMLHttpRequest' }
+      });
+
+      const data = await res.json();
+
+      if (data && data.ok) {
+        setPlanVisibility(!!data.enabled);
+      }
+    } catch (e) {
+      // Si falla, no hacemos nada para evitar parpadeos.
+    }
+  }
+
+  // Primera ejecución
+  refreshPlanStatus();
+
+  // Polling cada 5 segundos
+  setInterval(refreshPlanStatus, 5000);
+
+})();
+</script>

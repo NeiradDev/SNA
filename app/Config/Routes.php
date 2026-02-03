@@ -13,10 +13,23 @@ $routes->get('logout', 'Auth::logout');
 
 $routes->group('', ['filter' => 'auth'], function (RouteCollection $routes) {
 
-    //HOME principal (protegido)
+    // HOME
     $routes->get('home', 'Home::home');
-
     $routes->get('perfil', 'Perfil::index');
+
+    // ✅ Vista para editar el horario (UN SOLO HORARIO)
+    $routes->get('reporte/horario-plan', 'HorarioPlan::index');
+
+    // ✅ Ruta interna para que el sidebar consulte si el Plan está habilitado
+    // (NO /api, NO externo, lee la BD)
+    $routes->get('reporte/plan-status', 'HorarioPlan::status');
+
+    // ✅ Guardar horario (AJAX interno, NO /api, lee/graba BD)
+    $routes->post('reporte/horario-plan/guardar', 'HorarioPlan::save');
+
+    // ✅ Plan de Batalla protegido por horario
+    $routes->get('reporte/plan', 'Reporte::plan', ['filter' => 'horarioPlan']);
+    $routes->post('reporte/plan', 'Reporte::storePlan', ['filter' => 'horarioPlan']);
 
     // ===== Usuarios =====
     $routes->group('usuarios', function (RouteCollection $routes) {

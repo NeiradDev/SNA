@@ -30,7 +30,7 @@ class PlanBatallaService
         }
 
         $cond = trim((string)($post['condicion'] ?? ''));
-        $allowed = ['Afluencia', 'Normal', 'Emergencia', 'Peligro'];
+        $allowed = ['AFLUENCIA', 'NORMAL', 'EMERGENCIA', 'PELIGRO','INEXISTENCIA'];
         if (!in_array($cond, $allowed, true)) {
             return ['success' => false, 'error' => 'Selecciona una condición válida.'];
         }

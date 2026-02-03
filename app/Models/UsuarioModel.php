@@ -80,10 +80,18 @@ class UsuarioModel extends Model
      * - Recibe un $where opcional para reutilizar en diferentes métodos.
      * - Recibe $order y $limit opcional.
      */
-    private function buildUserWithJoinsSql(string $whereSql = '', string $orderSql = '', bool $useLimit = false): string
-    {
-        // ✅ Este SELECT es el "corazón" que antes repetías en varios métodos.
-        $sql = <<<'SQL'
+  private function buildUserWithJoinsSql(string $whereSql = '', string $orderSql = '', bool $useLimit = false): string
+{
+    /**
+     * ✅ SELECT base con JOINS reutilizable:
+     * - USER (u)
+     * - agencias (ag)
+     * - area (ar)
+     * - cargo (ca)
+     * - division (dv)  <-- NUEVO (sale desde ar.id_division)
+     * - supervisor (sup)
+     */
+    $sql = <<<'SQL'
 SELECT
     u.id_user,
     u.nombres,
@@ -94,9 +102,21 @@ SELECT
     u.id_area,
     u.id_cargo,
     u.id_supervisor,
+
+    -- Agencia
     ag.nombre_agencia,
+
+    -- Área
     ar.nombre_area,
+    ar.id_division,
+
+    -- División (NUEVO)
+    dv.nombre_division,
+
+    -- Cargo
     ca.nombre_cargo,
+
+    -- Supervisor (self join)
     CASE
         WHEN sup.id_user IS NULL THEN NULL
         ELSE (sup.nombres || ' ' || sup.apellidos)
@@ -104,27 +124,28 @@ SELECT
 FROM public."USER" u
 LEFT JOIN public.agencias ag ON ag.id_agencias = u.id_agencias
 LEFT JOIN public.area ar     ON ar.id_area     = u.id_area
+LEFT JOIN public.division dv ON dv.id_division = ar.id_division
 LEFT JOIN public.cargo ca    ON ca.id_cargo    = u.id_cargo
 LEFT JOIN public."USER" sup  ON sup.id_user    = u.id_supervisor
 SQL;
 
-        // WHERE opcional
-        if ($whereSql !== '') {
-            $sql .= "\nWHERE " . $whereSql;
-        }
-
-        // ORDER opcional
-        if ($orderSql !== '') {
-            $sql .= "\nORDER BY " . $orderSql;
-        }
-
-        // LIMIT opcional
-        if ($useLimit) {
-            $sql .= "\nLIMIT ?";
-        }
-
-        return $sql;
+    // WHERE opcional
+    if ($whereSql !== '') {
+        $sql .= "\nWHERE " . $whereSql;
     }
+
+    // ORDER opcional
+    if ($orderSql !== '') {
+        $sql .= "\nORDER BY " . $orderSql;
+    }
+
+    // LIMIT opcional
+    if ($useLimit) {
+        $sql .= "\nLIMIT ?";
+    }
+
+    return $sql;
+}
 
     // ============================================================
     // LISTADOS

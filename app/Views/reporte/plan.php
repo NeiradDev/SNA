@@ -159,5 +159,29 @@ $oldCond = $old['condicion'] ?? '';
     if (condicionEl.value) renderPreguntas(condicionEl.value);
   })();
 </script>
+<script>
+/**
+ * Si el usuario ya está dentro de "Plan de Batalla" y el horario se vence,
+ * mostramos alerta y redirigimos sin recargar manualmente.
+ */
+(async function planPageAutoLock(){
+  const urlStatus = "<?= site_url('api/horario-plan/status') ?>";
+  const homeUrl   = "<?= site_url('home') ?>";
+
+  async function check(){
+    try{
+      const res = await fetch(urlStatus, { headers: { 'X-Requested-With': 'XMLHttpRequest' }});
+      const data = await res.json();
+      if(data.ok && !data.enabled){
+        alert('El Plan de Batalla quedó fuera de horario. Serás redirigido.');
+        window.location.href = homeUrl;
+      }
+    }catch(e){}
+  }
+
+  // Chequeo cada 30s
+  setInterval(check, 30000);
+})();
+</script>
 
 <?= $this->endSection() ?>

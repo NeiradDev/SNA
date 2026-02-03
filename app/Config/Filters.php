@@ -35,7 +35,7 @@ class Filters extends BaseFilters
         'pagecache'     => PageCache::class,
         'performance'   => PerformanceMetrics::class,
         'auth'          => \App\Filters\AuthFilter::class,
-         'planDeBatalla' => \App\Filters\PlanDeBatallaFilter::class,
+        'horarioPlan' => \App\Filters\FiltroHorarioPlan::class,
         ];
 
     /**

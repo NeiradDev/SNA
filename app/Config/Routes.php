@@ -54,7 +54,7 @@ $routes->group('', ['filter' => 'auth'], function (RouteCollection $routes) {
 
     // ===== Areas =====
     $routes->group('areas', function (RouteCollection $routes) {
-        $routes->get('', 'Areas::index');
+        $routes->get('  ', 'Areas::index');
     });
 
     // ===== Cargos =====

@@ -25,6 +25,7 @@ class UsuarioModel extends Model
 {
     protected ?array $lastDbError = null;
 
+<<<<<<< Updated upstream
     /**
      * Cache en memoria (solo DURANTE esta request).
      * Útil para catálogos que se llaman varias veces en el mismo request.
@@ -33,12 +34,19 @@ class UsuarioModel extends Model
 
     /** Reutiliza conexión. */
     private function db(): BaseConnection
+=======
+    private function getDb(): BaseConnection
+>>>>>>> Stashed changes
     {
         return \Config\Database::connect();
     }
 
+<<<<<<< Updated upstream
     /** Helper corto para queries parametrizadas. */
     private function fetchAll(string $sql, array $params = []): array
+=======
+    public function getUserList(int $limit = 50): array
+>>>>>>> Stashed changes
     {
         return $this->db()->query($sql, $params)->getResultArray();
     }
@@ -223,6 +231,14 @@ SQL;
         return $this->memoryCache['agencies'];
     }
 
+        public function getDivision(): array
+    {
+        $db = $this->getDb();
+
+        $sql = 'SELECT id_division, nombre_division FROM public.division ORDER BY nombre_division ASC';
+        return $db->query($sql)->getResultArray();
+    }
+
     public function getAreas(): array
     {
         if (isset($this->memoryCache['areas'])) {
@@ -236,10 +252,13 @@ SQL;
         return $this->memoryCache['areas'];
     }
 
+<<<<<<< Updated upstream
     /**
      * getCargosByArea()
      * Cargos filtrados por área (select dependiente).
      */
+=======
+>>>>>>> Stashed changes
     public function getCargosByArea(int $areaId): array
     {
         $sql = <<<'SQL'
@@ -252,10 +271,13 @@ SQL;
         return $this->fetchAll($sql, [$areaId]);
     }
 
+<<<<<<< Updated upstream
     /**
      * getSupervisorsByArea()
      * Supervisores del área seleccionada + siempre gerencia (id_area=1).
      */
+=======
+>>>>>>> Stashed changes
     public function getSupervisorsByArea(int $areaId): array
     {
         $sql = <<<'SQL'
@@ -280,10 +302,13 @@ SQL;
         return $this->fetchAll($sql, [$areaId]);
     }
 
+<<<<<<< Updated upstream
     // ============================================================
     // VALIDACIONES
     // ============================================================
 
+=======
+>>>>>>> Stashed changes
     public function docExists(string $docNumber): bool
     {
         $docNumber = trim($docNumber);
@@ -297,6 +322,45 @@ SQL;
         return !empty($row);
     }
 
+<<<<<<< Updated upstream
+=======
+    public function getLastDbError(): ?array
+    {
+        return $this->lastDbError;
+    }
+
+    public function insertUser(array $data): bool
+    {
+        $db = $this->getDb();
+
+        try {
+            $ok = $db->table('public."USER"')->insert($data);
+
+            // Si falla, guardamos el error de BD; si no, limpiamos el error anterior
+            $this->lastDbError = $ok ? null : $db->error();
+
+            return (bool) $ok;
+        } catch (\Throwable $e) {
+            // Si ocurre excepción, guardamos mensaje para diagnóstico
+            $this->lastDbError = [
+                'code'    => 0,
+                'message' => $e->getMessage(),
+            ];
+            return false;
+        }
+    }
+
+    public function getUserById(int $id): ?array
+    {
+        $db = $this->getDb();
+
+        $sql = 'SELECT * FROM public."USER" WHERE id_user = ? LIMIT 1';
+        $row = $db->query($sql, [$id])->getRowArray();
+
+        return $row ?: null;
+    }
+
+>>>>>>> Stashed changes
     public function docExistsForOtherUser(string $docNumber, int $userId): bool
     {
         $docNumber = trim($docNumber);
@@ -310,6 +374,7 @@ SQL;
         return !empty($row);
     }
 
+<<<<<<< Updated upstream
     // ============================================================
     // CRUD + ERRORES
     // ============================================================
@@ -334,6 +399,8 @@ SQL;
         );
     }
 
+=======
+>>>>>>> Stashed changes
     public function updateUser(int $id, array $data): bool
     {
         try {

@@ -23,12 +23,12 @@ class Usuarios extends BaseController
             'usuarios' => $this->service->list($limit),
         ];
 
-        return view('pages/Lista_usuario', $data);
+        return view('pages/usuario_views/Lista_usuario', $data);
     }
 
     public function create()
     {
-        return view('pages/Crear_usuario', $this->service->getAuxData());
+        return view('pages/usuario_views/Crear_usuario', $this->service->getAuxData());
     }
 
     public function store()
@@ -55,7 +55,7 @@ class Usuarios extends BaseController
 
         $data = $this->service->getAuxData() + ['usuario' => $user];
 
-        return view('pages/Editar_usuario', $data);
+        return view('pages/usuario_views/Editar_usuario', $data);
     }
 
     public function update(int $id)
@@ -90,5 +90,14 @@ class Usuarios extends BaseController
         }
 
         return $this->response->setJSON($this->service->supervisorsByArea($areaId));
+    }
+    public function getDivision()
+    {
+        $divisionId = (int) ($this->request->getGet('id_divison') ?? 0);
+        if ($divisionId <= 0) {
+            return $this->response->setJSON([]);
+        }
+
+        return $this->response->setJSON($this->service->supervisorsByArea($divisionId));
     }
 }

@@ -15,6 +15,6 @@ class Agencias extends BaseController
         $data['agencias'] = $model->findAll();
         
         // Cargar vista con datos
-        return view('pages/agencias', $data);
+        return view('pages/agencias_views/agencias', $data);
     }
 }

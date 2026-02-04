@@ -1,22 +1,39 @@
-The MIT License (MIT)
+LICENCIA DE SOFTWARE – USO EMPRESARIAL CON DERECHOS DEL DESARROLLADOR
 
-Copyright (c) 2014-2019 British Columbia Institute of Technology
-Copyright (c) 2019-present CodeIgniter Foundation
+Copyright (c) 2026 BestPC
+Autor y desarrollador principal: yo
 
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
+PROPIEDAD DEL SOFTWARE
+El código fuente, arquitectura y lógica del software son propiedad intelectual
+del desarrollador principal. BestPC recibe una licencia no exclusiva, indefinida
+y gratuita para el uso, modificación y operación del software para fines
+internos empresariales.
 
-The above copyright notice and this permission notice shall be included in
-all copies or substantial portions of the Software.
+DERECHOS DEL DESARROLLADOR
+El desarrollador conserva el derecho de reutilizar, modificar, licenciar,
+comercializar y vender el software o sus derivados a terceros, siempre que
+NO incluya información, datos, métricas, configuraciones ni estructuras
+específicas pertenecientes a BestPC.
 
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
-THE SOFTWARE.
+EXCLUSIVIDAD DE DATOS
+Toda información contenida en bases de datos, métricas, reportes, credenciales,
+configuraciones, flujos operativos y cualquier dato generado por la operación
+de BestPC es propiedad exclusiva de BestPC y no podrá ser compartida,
+reutilizada ni comercializada bajo ninguna circunstancia.
+
+CONFIDENCIALIDAD
+Se prohíbe expresamente la divulgación de información sensible o estratégica
+de BestPC, incluyendo pero no limitado a datos reales, procesos internos y
+estadísticas operativas.
+
+LIMITACIONES
+No se permite la redistribución del software acompañado de datos reales de
+BestPC, ni la representación del producto como software oficial de BestPC
+ante terceros.
+
+RESPONSABILIDAD
+El software se entrega "TAL CUAL", sin garantías de ningún tipo. El desarrollador
+no será responsable por daños derivados del uso del software.
+
+JURISDICCIÓN
+Esta licencia se rige por las leyes aplicables del país donde opera BestPC.

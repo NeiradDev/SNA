@@ -1,70 +1,61 @@
 <?php
+declare(strict_types=1);
 
 namespace App\Models;
 
 use CodeIgniter\Model;
-use CodeIgniter\Database\BaseConnection;
-
 
 class UsuarioModel extends Model
 {
+    // --- Tablas ---
+    private const TBL_USER     = 'public."USER"';
+    private const TBL_AGENCIA  = 'public.agencias';
+    private const TBL_AREA     = 'public.area';
+    private const TBL_DIVISION = 'public.division';
+    private const TBL_CARGO    = 'public.cargo';
+
+    // --- Último error DB ---
     protected ?array $lastDbError = null;
 
-    /**
-     * Cache en memoria (solo DURANTE esta request).
-     * Útil para catálogos que se llaman varias veces en el mismo request.
-     */
+    // --- Cache por request ---
     private array $memoryCache = [];
 
-    /** Reutiliza conexión. */
-    private function db(): BaseConnection
-    {
-        return \Config\Database::connect();
-    }
-
-    /** Helper corto para queries parametrizadas. */
+    // --------------------------------------------------
+    // Helpers SQL
+    // --------------------------------------------------
     private function fetchAll(string $sql, array $params = []): array
     {
-        return $this->db()->query($sql, $params)->getResultArray();
+        return $this->db->query($sql, $params)->getResultArray();
     }
 
-    /** Helper corto para un solo row. */
     private function fetchRow(string $sql, array $params = []): ?array
     {
-        $row = $this->db()->query($sql, $params)->getRowArray();
-        return $row ?: null;
+        return $this->db->query($sql, $params)->getRowArray() ?: null;
     }
 
-    /** Tabla USER (Postgres) centralizada para inserts/updates. */
     private function userTable()
     {
-        return $this->db()->table('public."USER"');
+        return $this->db->table(self::TBL_USER);
     }
 
-    /** Guarda último error de BD (si existe) o lo limpia. */
-    private function setDbError(?array $err): void
+    private function setDbError(?array $error): void
     {
-        $this->lastDbError = $err;
+        $this->lastDbError = $error;
     }
 
-    /** Último error DB (insert/update). */
     public function getLastDbError(): ?array
     {
         return $this->lastDbError;
     }
 
-    
-    private function buildUserWithJoinsSql(string $whereSql = '', string $orderSql = '', bool $useLimit = false): string
-    {
-        /**
-         * ✅ SELECT base con JOINS reutilizable:
-         * - USER (u)
-         * - agencias (ag)
-         * - area (ar)
-         * - cargo (ca)
-         * - division (dv)  <-- NUEVO (sale desde ar.id_division)
-         * - supervisor (sup)
-         */
+    // --------------------------------------------------
+    // SQL base: usuario + joins
+    // --------------------------------------------------
+    private function buildUserWithJoinsSql(
+        ?string $where = null,
+        ?string $orderBy = null,
+        ?int $limit = null
+    ): string {
         $sql = <<<'SQL'
 SELECT
     u.id_user,
@@ -76,21 +67,11 @@ SELECT
     u.id_area,
     u.id_cargo,
     u.id_supervisor,
-
-    -- Agencia
     ag.nombre_agencia,
-
-    -- Área
     ar.nombre_area,
     ar.id_division,
-
-    -- División (NUEVO)
     dv.nombre_division,
-
-    -- Cargo
     ca.nombre_cargo,
-
-    -- Supervisor (self join)
     CASE
         WHEN sup.id_user IS NULL THEN NULL
         ELSE (sup.nombres || ' ' || sup.apellidos)
@@ -103,43 +84,80 @@ LEFT JOIN public.cargo ca    ON ca.id_cargo    = u.id_cargo
 LEFT JOIN public."USER" sup  ON sup.id_user    = u.id_supervisor
 SQL;
 
-        // WHERE opcional
-        if ($whereSql !== '') {
-            $sql .= "\nWHERE " . $whereSql;
-        }
-
-        // ORDER opcional
-        if ($orderSql !== '') {
-            $sql .= "\nORDER BY " . $orderSql;
-        }
-
-        // LIMIT opcional
-        if ($useLimit) {
-            $sql .= "\nLIMIT ?";
-        }
+        if ($where)   $sql .= "\nWHERE {$where}";
+        if ($orderBy) $sql .= "\nORDER BY {$orderBy}";
+        if ($limit !== null) $sql .= "\nLIMIT {$limit}";
 
         return $sql;
     }
 
-       public function getUserList(int $limit = 50): array
+    // --------------------------------------------------
+    // Catálogos (cache por request)
+    // --------------------------------------------------
+    private function cachedQuery(string $key, string $sql): array
     {
-        $sql = $this->buildUserWithJoinsSql(
-            whereSql: '',                 // sin filtro
-            orderSql: 'u.id_user DESC',   // mismo orden
-            useLimit: true                // aplica LIMIT ?
-        );
-
-        return $this->fetchAll($sql, [$limit]);
+        return $this->memoryCache[$key]
+            ??= $this->fetchAll($sql);
     }
 
-    
+    public function getAgencies(): array
+    {
+        return $this->cachedQuery(
+            'agencies',
+            'SELECT id_agencias, nombre_agencia FROM public.agencias ORDER BY nombre_agencia ASC'
+        );
+    }
+
+    public function getDivision(): array
+    {
+        return $this->cachedQuery(
+            'division',
+            'SELECT id_division, nombre_division FROM public.division ORDER BY nombre_division ASC'
+        );
+    }
+
+    public function getAreas(): array
+    {
+        return $this->cachedQuery(
+            'areas',
+            'SELECT id_area, nombre_area FROM public.area ORDER BY nombre_area ASC'
+        );
+    }
+
+    // --------------------------------------------------
+    // Usuario
+    // --------------------------------------------------
+    public function getUserList(int $limit = 50): array
+    {
+        return $this->fetchAll(
+            $this->buildUserWithJoinsSql(null, 'u.id_user DESC', $limit)
+        );
+    }
+
+    public function getUserById(int $id): ?array
+    {
+        return $this->fetchRow(
+            'SELECT * FROM ' . self::TBL_USER . ' WHERE id_user = ? LIMIT 1',
+            [$id]
+        );
+    }
+
+    // --------------------------------------------------
+    // Organigrama / relaciones
+    // --------------------------------------------------
     public function getOrgChartUsersByArea(int $areaId, int $gerenciaAreaId = 1): array
     {
-        $where = ($areaId === $gerenciaAreaId)
+        $isGerencia = $areaId === $gerenciaAreaId;
+
+        $where  = $isGerencia
             ? 'u.id_area = ?'
             : '(u.id_area = ? OR u.id_area = ?)';
 
-        $sql = <<<SQL
+        $params = $isGerencia
+            ? [$areaId]
+            : [$areaId, $gerenciaAreaId];
+
+        $sql = <<<'SQL'
 SELECT
     u.id_user,
     u.nombres,
@@ -153,139 +171,68 @@ FROM public."USER" u
 LEFT JOIN public.area ar  ON ar.id_area  = u.id_area
 LEFT JOIN public.cargo ca ON ca.id_cargo = u.id_cargo
 WHERE u.activo = TRUE
-AND {$where}
+  AND {$where}
 ORDER BY u.id_area ASC, u.id_user ASC
 SQL;
-
-        $params = ($areaId === $gerenciaAreaId) ? [$areaId] : [$areaId, $gerenciaAreaId];
 
         return $this->fetchAll($sql, $params);
     }
 
-   
-
-    public function getAgencies(): array
-    {
-        // ✅ Evita ejecutar la misma consulta varias veces dentro del mismo request
-        if (isset($this->memoryCache['agencies'])) {
-            return $this->memoryCache['agencies'];
-        }
-
-        $this->memoryCache['agencies'] = $this->fetchAll(
-            'SELECT id_agencias, nombre_agencia FROM public.agencias ORDER BY nombre_agencia ASC'
-        );
-
-        return $this->memoryCache['agencies'];
-    }
-
-    public function getAreas(): array
-    {
-        if (isset($this->memoryCache['areas'])) {
-            return $this->memoryCache['areas'];
-        }
-
-        $this->memoryCache['areas'] = $this->fetchAll(
-            'SELECT id_area, nombre_area FROM public.area ORDER BY nombre_area ASC'
-        );
-
-        return $this->memoryCache['areas'];
-    }
-
-   
+    // Cargo DEPENDE de Área (regla mantenida)
     public function getCargosByArea(int $areaId): array
     {
         $sql = <<<'SQL'
-SELECT c.id_cargo, c.nombre_cargo
-FROM public.cargo c
-WHERE c.id_area = ?
-ORDER BY c.nombre_cargo ASC
+SELECT id_cargo, nombre_cargo
+FROM public.cargo
+WHERE id_area = ?
+ORDER BY nombre_cargo ASC
 SQL;
-
         return $this->fetchAll($sql, [$areaId]);
     }
 
-  
     public function getSupervisorsByArea(int $areaId): array
     {
         $sql = <<<'SQL'
 SELECT
     u.id_user,
-    u.id_area,
-    (u.nombres || ' ' || u.apellidos) AS nombre_completo,
-    COALESCE(ca.nombre_cargo, '') AS nombre_cargo,
     CASE
-        WHEN ca.nombre_cargo IS NULL OR ca.nombre_cargo = '' THEN (u.nombres || ' ' || u.apellidos)
+        WHEN ca.nombre_cargo IS NULL OR ca.nombre_cargo = ''
+            THEN (u.nombres || ' ' || u.apellidos)
         ELSE (u.nombres || ' ' || u.apellidos || ' — ' || ca.nombre_cargo)
     END AS supervisor_label
 FROM public."USER" u
 LEFT JOIN public.cargo ca ON ca.id_cargo = u.id_cargo
 WHERE u.activo = TRUE
-AND (u.id_area = ? OR u.id_area = 1)
+  AND (u.id_area = ? OR u.id_area = 1)
 ORDER BY
-CASE WHEN u.id_area = 1 THEN 0 ELSE 1 END,
-supervisor_label ASC
+  CASE WHEN u.id_area = 1 THEN 0 ELSE 1 END,
+  supervisor_label ASC
 SQL;
 
         return $this->fetchAll($sql, [$areaId]);
     }
 
-    
-    public function docExists(string $docNumber): bool
-    {
-        $docNumber = trim($docNumber);
-        if ($docNumber === '') return false;
-
-        $row = $this->fetchRow(
-            'SELECT 1 FROM public."USER" WHERE cedula = ? LIMIT 1',
-            [$docNumber]
-        );
-
-        return !empty($row);
-    }
-
-    public function docExistsForOtherUser(string $docNumber, int $userId): bool
-    {
-        $docNumber = trim($docNumber);
-        if ($docNumber === '') return false;
-
-        $row = $this->fetchRow(
-            'SELECT 1 FROM public."USER" WHERE cedula = ? AND id_user <> ? LIMIT 1',
-            [$docNumber, $userId]
-        );
-
-        return !empty($row);
-    }
-
-   
+    // --------------------------------------------------
+    // CRUD
+    // --------------------------------------------------
     public function insertUser(array $data): bool
     {
         try {
             $ok = $this->userTable()->insert($data);
-            $this->setDbError($ok ? null : $this->db()->error());
-            return (bool)$ok;
+            $this->setDbError($ok ? null : $this->db->error());
+            return (bool) $ok;
         } catch (\Throwable $e) {
             $this->setDbError(['code' => 0, 'message' => $e->getMessage()]);
             return false;
         }
     }
 
-    public function getUserById(int $id): ?array
-    {
-        return $this->fetchRow(
-            'SELECT * FROM public."USER" WHERE id_user = ? LIMIT 1',
-            [$id]
-        );
-    }
-
     public function updateUser(int $id, array $data): bool
     {
         try {
-            $ok = $this->userTable()
-                ->where('id_user', $id)
-                ->update($data);
-
-            $this->setDbError($ok ? null : $this->db()->error());
-            return (bool)$ok;
+            $ok = $this->userTable()->where('id_user', $id)->update($data);
+            $this->setDbError($ok ? null : $this->db->error());
+            return (bool) $ok;
         } catch (\Throwable $e) {
             $this->setDbError(['code' => 0, 'message' => $e->getMessage()]);
             return false;
@@ -294,31 +241,20 @@ SQL;
 
     public function getUserProfileForPlan(int $idUser): ?array
     {
-        $sql = $this->buildUserWithJoinsSql(
-            whereSql: 'u.id_user = ?',
-            orderSql: '',       // no hace falta ORDER en LIMIT 1
-            useLimit: false
+        return $this->fetchRow(
+            $this->buildUserWithJoinsSql('u.id_user = ?', null, 1),
+            [$idUser]
         );
-
-       
-        $sql .= "\nLIMIT 1";
-
-        return $this->fetchRow($sql, [$idUser]);
     }
 
-   
     public function getUsersByArea(int $areaId): array
     {
         $sql = <<<'SQL'
 SELECT
     u.id_user,
     (u.nombres || ' ' || u.apellidos) AS nombre_completo,
-    u.id_area,
-    ar.nombre_area,
-    u.id_cargo,
     ca.nombre_cargo
 FROM public."USER" u
-LEFT JOIN public.area ar  ON ar.id_area  = u.id_area
 LEFT JOIN public.cargo ca ON ca.id_cargo = u.id_cargo
 WHERE u.activo = TRUE
   AND u.id_area = ?

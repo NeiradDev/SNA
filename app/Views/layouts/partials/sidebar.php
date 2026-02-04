@@ -49,14 +49,14 @@ $menuItems = [
     'url'   => 'agencias'
   ],
   [
-    'title' => 'Áreas',
+    'title' => 'Division',
     'icon'  => 'bi-grid',
-    'id'    => 'submenu-areas',
-    'sub'   => [
+    'url'   => 'division'
+    /*'sub'   => [
       ['title' => 'TICs',           'url' => 'areas/tics'],
       ['title' => 'Contabilidad',   'url' => 'areas/contabilidad'],
       ['title' => 'Talento Humano', 'url' => 'areas/talento-humano'],
-    ],
+    ],*/
   ],
   [
     'title' => 'Tareas',

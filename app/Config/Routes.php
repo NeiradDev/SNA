@@ -54,7 +54,13 @@ $routes->group('', ['filter' => 'auth'], function (RouteCollection $routes) {
 
     // ===== Areas =====
     $routes->group('areas', function (RouteCollection $routes) {
-        $routes->get('  ', 'Areas::index');
+        $routes->get('', 'Areas::index');
+    });
+    // ===== Division =====
+    $routes->group('division', function ($routes) {
+        $routes->get('/', 'Division::index');
+        $routes->get('crear', 'Division::create');
+        $routes->post('guardar', 'Division::store');
     });
 
     // ===== Cargos =====

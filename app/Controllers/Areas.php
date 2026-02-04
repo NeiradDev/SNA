@@ -10,7 +10,7 @@ class Areas extends BaseController
     // Vista: /areas/{slug}
     public function view(string $slug)
     {
-<<<<<<< Updated upstream
+
         return view('areas/orgchart', [
             'dataUrl' => base_url('areas/orgchart-data/' . $slug),
         ]);
@@ -21,9 +21,9 @@ class Areas extends BaseController
     {
         $service = new OrgChartService(new UsuarioModel());
         return $this->response->setJSON($service->getBySlug($slug));
-=======
+
         // llamado de vista del formulario
         return view('pages/areas_views/areas');
->>>>>>> Stashed changes
+
     }
 }

@@ -9,7 +9,7 @@ use CodeIgniter\Router\RouteCollection;
 $routes->get('/', 'Auth::login');
 $routes->get('login', 'Auth::login');
 $routes->post('auth/attempt', 'Auth::attempt');
-$routes->get('logout', 'Auth::logout');
+$routes->post('logout', 'Auth::logout');
 
 $routes->group('', ['filter' => 'auth'], function (RouteCollection $routes) {
 
@@ -54,7 +54,7 @@ $routes->group('', ['filter' => 'auth'], function (RouteCollection $routes) {
 
     // ===== Areas =====
     $routes->group('areas', function (RouteCollection $routes) {
-        $routes->get('', 'Areas::index');
+        $routes->get('  ', 'Areas::index');
     });
 
     // ===== Cargos =====

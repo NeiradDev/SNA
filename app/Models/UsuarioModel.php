@@ -5,22 +5,7 @@ namespace App\Models;
 use CodeIgniter\Model;
 use CodeIgniter\Database\BaseConnection;
 
-/**
- * UsuarioModel (PostgreSQL)
- *
- * OBJETIVO DE OPTIMIZACIÓN:
- * - Evitar SQL duplicado, especialmente en consultas con JOIN repetidas:
- *   * USER + area + cargo + agencias + supervisor
- * - Centralizar "SELECT base" para reusar en:
- *   * getUserList()
- *   * getUserProfileForPlan()
- *   (y cualquier otro futuro que necesite los mismos joins)
- * - Mantener tus helpers fetchAll/fetchRow y control de errores.
- *
- * NOTA:
- * - Esto NO "fusiona" consultas que el controller llame en momentos diferentes.
- * - Pero sí elimina duplicidad de SQL y facilita cache/ajustes.
- */
+
 class UsuarioModel extends Model
 {
     protected ?array $lastDbError = null;
@@ -68,30 +53,19 @@ class UsuarioModel extends Model
         return $this->lastDbError;
     }
 
-    // ============================================================
-    // 🔁 SQL BASE REUTILIZABLE (evita duplicados)
-    // ============================================================
-
-    /**
-     * SELECT base con JOINS para USER:
-     * - agencias, area, cargo, supervisor (self join)
-     *
-     * IMPORTANTE:
-     * - Recibe un $where opcional para reutilizar en diferentes métodos.
-     * - Recibe $order y $limit opcional.
-     */
-  private function buildUserWithJoinsSql(string $whereSql = '', string $orderSql = '', bool $useLimit = false): string
-{
-    /**
-     * ✅ SELECT base con JOINS reutilizable:
-     * - USER (u)
-     * - agencias (ag)
-     * - area (ar)
-     * - cargo (ca)
-     * - division (dv)  <-- NUEVO (sale desde ar.id_division)
-     * - supervisor (sup)
-     */
-    $sql = <<<'SQL'
+    
+    private function buildUserWithJoinsSql(string $whereSql = '', string $orderSql = '', bool $useLimit = false): string
+    {
+        /**
+         * ✅ SELECT base con JOINS reutilizable:
+         * - USER (u)
+         * - agencias (ag)
+         * - area (ar)
+         * - cargo (ca)
+         * - division (dv)  <-- NUEVO (sale desde ar.id_division)
+         * - supervisor (sup)
+         */
+        $sql = <<<'SQL'
 SELECT
     u.id_user,
     u.nombres,
@@ -129,36 +103,25 @@ LEFT JOIN public.cargo ca    ON ca.id_cargo    = u.id_cargo
 LEFT JOIN public."USER" sup  ON sup.id_user    = u.id_supervisor
 SQL;
 
-    // WHERE opcional
-    if ($whereSql !== '') {
-        $sql .= "\nWHERE " . $whereSql;
+        // WHERE opcional
+        if ($whereSql !== '') {
+            $sql .= "\nWHERE " . $whereSql;
+        }
+
+        // ORDER opcional
+        if ($orderSql !== '') {
+            $sql .= "\nORDER BY " . $orderSql;
+        }
+
+        // LIMIT opcional
+        if ($useLimit) {
+            $sql .= "\nLIMIT ?";
+        }
+
+        return $sql;
     }
 
-    // ORDER opcional
-    if ($orderSql !== '') {
-        $sql .= "\nORDER BY " . $orderSql;
-    }
-
-    // LIMIT opcional
-    if ($useLimit) {
-        $sql .= "\nLIMIT ?";
-    }
-
-    return $sql;
-}
-
-    // ============================================================
-    // LISTADOS
-    // ============================================================
-
-    /**
-     * getUserList()
-     * Listado para la vista (con supervisor_nombre).
-     *
-     * OPTIMIZACIÓN:
-     * - Ahora reutiliza el SELECT base con joins.
-     */
-    public function getUserList(int $limit = 50): array
+       public function getUserList(int $limit = 50): array
     {
         $sql = $this->buildUserWithJoinsSql(
             whereSql: '',                 // sin filtro
@@ -169,13 +132,7 @@ SQL;
         return $this->fetchAll($sql, [$limit]);
     }
 
-    /**
-     * getOrgChartUsersByArea()
-     * Usuarios activos por área para organigrama.
-     *
-     * Aquí NO usamos el SELECT base porque el organigrama no necesita agencias/supervisor_nombre,
-     * y traerlos sería más pesado (correcto dejarlo separado).
-     */
+    
     public function getOrgChartUsersByArea(int $areaId, int $gerenciaAreaId = 1): array
     {
         $where = ($areaId === $gerenciaAreaId)
@@ -205,9 +162,7 @@ SQL;
         return $this->fetchAll($sql, $params);
     }
 
-    // ============================================================
-    // CATÁLOGOS (con cache en memoria para no repetir dentro de 1 request)
-    // ============================================================
+   
 
     public function getAgencies(): array
     {
@@ -236,10 +191,7 @@ SQL;
         return $this->memoryCache['areas'];
     }
 
-    /**
-     * getCargosByArea()
-     * Cargos filtrados por área (select dependiente).
-     */
+   
     public function getCargosByArea(int $areaId): array
     {
         $sql = <<<'SQL'
@@ -252,10 +204,7 @@ SQL;
         return $this->fetchAll($sql, [$areaId]);
     }
 
-    /**
-     * getSupervisorsByArea()
-     * Supervisores del área seleccionada + siempre gerencia (id_area=1).
-     */
+  
     public function getSupervisorsByArea(int $areaId): array
     {
         $sql = <<<'SQL'
@@ -280,10 +229,7 @@ SQL;
         return $this->fetchAll($sql, [$areaId]);
     }
 
-    // ============================================================
-    // VALIDACIONES
-    // ============================================================
-
+    
     public function docExists(string $docNumber): bool
     {
         $docNumber = trim($docNumber);
@@ -310,10 +256,7 @@ SQL;
         return !empty($row);
     }
 
-    // ============================================================
-    // CRUD + ERRORES
-    // ============================================================
-
+   
     public function insertUser(array $data): bool
     {
         try {
@@ -349,14 +292,6 @@ SQL;
         }
     }
 
-    /**
-     * getUserProfileForPlan()
-     * Trae datos del usuario logueado con joins.
-     *
-     * OPTIMIZACIÓN:
-     * - Reusa el mismo SELECT base con joins.
-     * - Evitas mantener 2 queries casi iguales.
-     */
     public function getUserProfileForPlan(int $idUser): ?array
     {
         $sql = $this->buildUserWithJoinsSql(
@@ -365,18 +300,13 @@ SQL;
             useLimit: false
         );
 
-        // ✅ Agregamos LIMIT 1 sin placeholder extra
+       
         $sql .= "\nLIMIT 1";
 
         return $this->fetchRow($sql, [$idUser]);
     }
 
-    /**
-     * getUsersByArea()
-     * Lista usuarios activos por área (para selects).
-     *
-     * Esta consulta es distinta a la base, está bien separada.
-     */
+   
     public function getUsersByArea(int $areaId): array
     {
         $sql = <<<'SQL'

@@ -4,19 +4,10 @@
 <div class="container-fluid">
 
     <?php
-    /**
-     * Flashdata de errores:
-     * - El Controller guarda errores como: ->with('errors', [...])
-     * - Aquí los leemos para mostrarlos en un modal Bootstrap
-     */
+
     $errors = session()->getFlashdata('errors');
     ?>
 
-    <!-- ============================================================
-         MODAL DE ERRORES
-         - Se muestra solo si existen errores en sesión
-         - Lista todos los mensajes devueltos por el Controller
-         ============================================================ -->
     <?php if (!empty($errors)): ?>
         <div class="modal fade" id="feedbackModal" tabindex="-1" aria-hidden="true">
             <div class="modal-dialog modal-dialog-centered">
@@ -61,7 +52,7 @@
          - Columna derecha: tarjeta de ayuda
          ============================================================ -->
     <div class="row">
-        <div class="col-12 col-lg-9">
+        <div class="col-12 col-lg-10">
             <div class="card border-0 shadow-sm pt-2">
                 <div class="card-body p-4">
 
@@ -165,6 +156,19 @@
                                     <?php endforeach; ?>
                                 </select>
                             </div>
+                            <div class="col-md-3">
+                                <label class="form-label fw-bold small">Division</label>
+                                <select name="id_divison" id="id_divison" class="form-select bg-light border-0">
+                                <option value="">Seleccione...</option>    
+                                <?php foreach (($division ?? []) as $dv): ?>
+                                        <option 
+                                            value="<?= esc($dv['id_division']) ?>"
+                                            <?= old('id_division') == $dv['id_division'] ? 'selected' : '' ?>>
+                                            <?= esc($dv['nombre_division']) ?>
+                                        </option>
+                                    <?php endforeach; ?>
+                                </select>
+                            </div>
 
                             <!-- Área (dispara carga dinámica de cargos y supervisores) -->
                             <div class="col-md-3">
@@ -226,7 +230,7 @@
         </div>
 
         <!-- Tarjeta de ayuda lateral -->
-        <div class="col-12 col-lg-3">
+        <div class="col-md-2 .ms-md-auto">
             <div class="card border-0 bg-dark text-white shadow-sm mb-3">
                 <div class="card-body">
                     <h6 class="fw-bold">

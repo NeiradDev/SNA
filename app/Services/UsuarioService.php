@@ -30,6 +30,7 @@ class UsuarioService
         return [
             'agencias' => $this->usuarioModel->getAgencies(),
             'areas'    => $this->usuarioModel->getAreas(),
+            'division'  => $this->usuarioModel->getDivision()
         ];
     }
 

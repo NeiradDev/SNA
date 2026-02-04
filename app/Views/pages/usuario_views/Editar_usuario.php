@@ -4,34 +4,8 @@
 <div class="container-fluid">
 
     <?php
-    /**
-     * ============================================================
-     * Vista: Editar_usuario.php
-     *
-     * Objetivo:
-     * - Mostrar formulario para editar un usuario existente
-     * - Mantener mismo diseño que Crear_usuario.php
-     * - Respetar combos dinámicos:
-     *   Área -> carga Cargos y Supervisores por API (fetch)
-     *
-     * Variables esperadas desde el Controller:
-     * - $usuario  : datos del usuario a editar
-     * - $agencias : lista de agencias
-     * - $areas    : lista de áreas
-     *
-     * Flashdata:
-     * - errors: array de errores devueltos por el Controller para modal
-     * ============================================================
-     */
     $errors = session()->getFlashdata('errors');
 
-    /**
-     * ============================================================
-     * Valores base del form:
-     * - old() tiene prioridad si el form vuelve por validación fallida
-     * - si no hay old(), usamos los valores reales de $usuario
-     * ============================================================
-     */
     $userId        = (int) ($usuario['id_user'] ?? 0);
 
     $nombresVal    = old('nombres')   ?? ($usuario['nombres']   ?? '');
@@ -45,23 +19,11 @@
     $cargoVal      = old('id_cargo')      ?? ($usuario['id_cargo']      ?? '');
     $supervisorVal = old('id_supervisor') ?? ($usuario['id_supervisor'] ?? 0);
 
-    /**
-     * Activo:
-     * - old('activo') puede ser null si no vino del form
-     * - si es null, tomamos el valor original del usuario
-     */
     $activoOld = old('activo');
     $isActive  = ($activoOld === null)
         ? !empty($usuario['activo'])
         : (bool) $activoOld;
 
-    /**
-     * Tipo de documento:
-     * - Si el usuario vuelve con old('doc_type'), lo respetamos
-     * - Si no, inferimos:
-     *   * si el documento tiene solo números => CEDULA
-     *   * si tiene letras => PASAPORTE
-     */
     $docTypeVal = old('doc_type');
     if ($docTypeVal === null) {
         $docTypeVal = (preg_match('/^\d+$/', (string) $docNumberVal)) ? 'CEDULA' : 'PASAPORTE';
@@ -110,22 +72,11 @@
         </script>
     <?php endif; ?>
 
-    <!-- ============================================================
-         LAYOUT PRINCIPAL
-         - Izquierda: formulario
-         - Derecha: tarjeta de ayuda
-         ============================================================ -->
     <div class="row">
         <div class="col-12 col-lg-9">
             <div class="card border-0 shadow-sm pt-2">
                 <div class="card-body p-4">
 
-                    <!-- ============================================================
-                         FORMULARIO DE EDICIÓN
-                         - Envía POST a /usuarios/actualizar/{id}
-                         - CSRF para seguridad
-                         - Password es opcional (si se deja vacío, no cambia)
-                         ============================================================ -->
                     <form action="<?= base_url('usuarios/actualizar/' . $userId) ?>" method="POST">
                         <?= csrf_field() ?>
 
@@ -139,8 +90,6 @@
                                 <div class="small text-muted">ID: <?= esc($userId) ?></div>
                                 -->
                             </div>
-
-
                         </div>
 
                         <hr class="opacity-25 mb-4">
@@ -176,12 +125,6 @@
                                     maxlength="32"
                                     value="<?= esc($apellidosVal) ?>">
                             </div>
-
-                            <!-- ============================================================
-                                 Documento (Tipo + Número)
-                                 - doc_type determina reglas del input
-                                 - doc_number se “limpia” y limita en JS
-                                 ============================================================ -->
                             <div class="col-md-3">
                                 <label class="form-label fw-bold small">Tipo de documento</label>
                                 <select name="doc_type" id="doc_type" class="form-select bg-light border-0" required>

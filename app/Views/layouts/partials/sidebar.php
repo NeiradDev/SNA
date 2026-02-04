@@ -178,7 +178,11 @@ $labelPerfil    = ($logged && $nombreCompleto !== '') ? $nombreCompleto : 'Mi pe
           </a>
         </li>
         <li><hr class="dropdown-divider border-secondary"></li>
-        <li><a class="dropdown-item" href="<?= base_url('logout') ?>">Salir</a></li>
+        <li>  
+              <form action="<?= base_url('logout') ?>" method="post">
+              <?= csrf_field() ?>
+              <button type="submit" class="dropdown-item">Salir</button></form> 
+        </li>
       </ul>
     </div>
 

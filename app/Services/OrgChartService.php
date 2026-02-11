@@ -1,211 +1,224 @@
 <?php
 
+declare(strict_types=1);
+
 namespace App\Services;
 
-use App\Models\UsuarioModel;
-use Config\OrgChartRules;
+use App\Models\OrgChartModel;
 
+/**
+ * OrgChartService
+ *
+ * ✅ Construye:
+ * - Data de página (title + url json)
+ * - Payload JSON {title, nodes} para la vista
+ * - Nodos del organigrama para d3-org-chart
+ *
+ * ✅ Regla:
+ * - ROOT = usuario con cargo 6 (Gerencia)
+ * - Debajo: Jefe de División (division.id_jf_division)
+ * - Luego: Jefes de Área (area.id_jf_area)
+ * - Luego: Usuarios del área
+ */
 class OrgChartService
 {
-    public function __construct(private UsuarioModel $usuarioModel) {}
+    private OrgChartModel $model;
+
+    public function __construct()
+    {
+        // ✅ No tocamos tu CRUD, este model es solo lectura del organigrama
+        $this->model = new OrgChartModel();
+    }
 
     /**
-     * Retorna: slug, title, nodes[] (para d3-org-chart)
-     * - Incluye siempre la gerencia arriba (configurable)
-     * - El área solicitada cuelga debajo de la gerencia
+     * Data para la vista HTML (orgchart.php)
+     * - La vista recibe $dataUrl y opcionalmente $title (pero el JS toma el title del JSON)
      */
-    public function getBySlug(string $slug): array
+    public function getDivisionPageData(int $divisionId): array
     {
-        helper('text');
+        $divisionId = (int) $divisionId;
 
-        [$areaId, $areaName] = $this->resolveAreaBySlug($slug);
-        if (!$areaId) {
-            return ['slug' => $slug, 'title' => 'Organigrama', 'nodes' => []];
-        }
-
-        // ✅ Gerencia configurable (por defecto 1)
-        $gerenciaAreaId = OrgChartRules::GERENCIA_AREA_ID;
-
-        // 1) Traer usuarios del área solicitada + gerencia
-        //    IMPORTANTE: necesitas que tu UsuarioModel soporte el 2do parámetro
-        //    getOrgChartUsersByArea(int $areaId, int $gerenciaAreaId)
-        $rows  = $this->usuarioModel->getOrgChartUsersByArea($areaId, $gerenciaAreaId);
-
-        // 2) Nodos en formato d3-org-chart
-        $nodes = $this->toNodes($rows);
-
-        // 3) Evita parentId inválidos (si supervisor no está en este set, lo vuelve null)
-        $nodes = $this->sanitizeParentsInsideArea($nodes);
-
-        // 4) Asegura que Gerencia esté arriba:
-        //    - Si el área solicitada no es gerencia, cuelga raíces del área debajo del root de gerencia (si hay uno único)
-        $nodes = $this->attachAreaRootsToGerencia($nodes, $areaId, $gerenciaAreaId);
-
-        // 5) Reglas especiales por área (si existen): niveles / etc.
-        $rules = OrgChartRules::BY_AREA_ID[$areaId] ?? null;
-
-        $title = 'Organigrama - ' . ($areaName ?: 'Área');
-
-        if ($rules) {
-            $nodes = $this->applyRules($nodes, $rules);
-            $title = $rules['title'] ?? $title;
-        }
-
-        // Orden opcional (solo visual)
-        usort($nodes, fn($a, $b) => ($a['level'] <=> $b['level']) ?: ($a['id'] <=> $b['id']));
+        $divisionName = $this->model->getDivisionName($divisionId) ?? ('División #' . $divisionId);
 
         return [
-            'slug'  => $slug,
-            'title' => $title,
-            'nodes' => $nodes,
+            'title'      => 'Organigrama — ' . $divisionName,
+            'dataUrl'    => base_url('orgchart/api/division/' . $divisionId),
+            'divisionId' => $divisionId,
         ];
     }
 
     /**
-     * Resuelve ID_AREA por slug sin cambiar BD:
-     * - tics => 5
-     * - resto => url_title(nombre_area) == slug
+     * ✅ Payload que tu vista espera:
+     * { title: string, nodes: array }
      */
-    private function resolveAreaBySlug(string $slug): array
+    public function getDivisionTreePayload(int $divisionId, int $gerenciaCargoId = 6): array
     {
-        if ($slug === 'tics') {
-            return [5, 'TICs (Sistemas)'];
-        }
+        $divisionId = (int) $divisionId;
 
-        $areas = $this->usuarioModel->getAreas();
-        foreach ($areas as $a) {
-            $id   = (int)($a['id_area'] ?? 0);
-            $name = (string)($a['nombre_area'] ?? '');
+        $divisionName = $this->model->getDivisionName($divisionId) ?? ('División #' . $divisionId);
 
-            if ($id && url_title($name, '-', true) === $slug) {
-                return [$id, $name];
-            }
-        }
-
-        return [0, ''];
+        return [
+            'title' => 'Organigrama — ' . $divisionName,
+            'nodes' => $this->getDivisionTreeData($divisionId, $gerenciaCargoId),
+        ];
     }
 
     /**
-     * Convierte filas SQL a nodos.
-     * Se agrega areaId para poder identificar nodos de gerencia.
+     * Nodos para d3-org-chart
+     * Devuelve: [{id, parentId, fullName, cargo, area}, ...]
      */
-    private function toNodes(array $rows): array
+    public function getDivisionTreeData(int $divisionId, int $gerenciaCargoId = 6): array
     {
-        $nodes = [];
+        $divisionId = (int) $divisionId;
+        $gerenciaCargoId = (int) $gerenciaCargoId;
 
-        foreach ($rows as $r) {
-            $nodes[] = [
-                'id'       => (int)$r['id_user'],
-                'parentId' => $r['id_supervisor'] !== null ? (int)$r['id_supervisor'] : null,
-                'fullName' => trim(($r['nombres'] ?? '') . ' ' . ($r['apellidos'] ?? '')),
-                'cargo'    => $r['nombre_cargo'] ?? null,
-                'cargoId'  => isset($r['id_cargo']) ? (int)$r['id_cargo'] : null,
-                'area'     => $r['nombre_area'] ?? null,
-                'areaId'   => isset($r['id_area']) ? (int)$r['id_area'] : null,
-                'level'    => 99, // default; se ajusta por reglas si aplica
+        // =========================================================
+        // 1) ROOT: Gerencia (cargo 6)
+        // =========================================================
+        $gerencia = $this->model->getGerenciaUserByCargo($gerenciaCargoId);
+
+        if (!$gerencia) {
+            // ✅ Evita que el JS reviente si no existe Gerencia
+            return [
+                [
+                    'id'       => 'root',
+                    'parentId' => null,
+                    'fullName' => 'Gerencia no asignada',
+                    'cargo'    => 'Cargo 6 no encontrado',
+                    'area'     => '',
+                ],
             ];
         }
 
-        return $nodes;
-    }
+        $rootId = (int) ($gerencia['id_user'] ?? 0);
 
-    /**
-     * Si parentId apunta a alguien fuera del set, se vuelve null.
-     * Evita romper el render.
-     */
-    private function sanitizeParentsInsideArea(array $nodes): array
-    {
-        $ids = array_flip(array_map(fn($n) => $n['id'], $nodes));
+        $nodes = [];
 
-        foreach ($nodes as &$n) {
-            if ($n['parentId'] !== null && !isset($ids[$n['parentId']])) {
-                $n['parentId'] = null;
-            }
-        }
-        unset($n);
+        // ✅ Root
+        $nodes[] = [
+            'id'       => $rootId,
+            'parentId' => null,
+            'fullName' => trim((string)($gerencia['nombres'] ?? '') . ' ' . (string)($gerencia['apellidos'] ?? '')),
+            'cargo'    => (string)($gerencia['nombre_cargo'] ?? 'Gerencia'),
+            'area'     => '',
+        ];
 
-        return $nodes;
-    }
+        // =========================================================
+        // 2) División y jefe de división
+        // =========================================================
+        $division = $this->model->getDivisionWithBoss($divisionId);
 
-    /**
-     * Gerencia siempre arriba:
-     * - Busca ROOTS de gerencia (areaId=gerenciaAreaId y parentId=NULL)
-     * - Si hay EXACTAMENTE 1 root, cuelga cualquier root del área solicitada debajo de ese root
-     * - Si hay 0 o más de 1 root, NO inventa enlaces
-     */
-    private function attachAreaRootsToGerencia(array $nodes, int $areaId, int $gerenciaAreaId): array
-    {
-        // Si el área solicitada ES gerencia, no hacemos nada
-        if ($areaId === $gerenciaAreaId) {
+        // ✅ Si no existe esa división, mostramos solo gerencia
+        if (!$division) {
             return $nodes;
         }
 
-        $gerenciaRoots = array_values(array_map(
-            fn($n) => $n['id'],
-            array_filter($nodes, fn($n) => (int)($n['areaId'] ?? 0) === $gerenciaAreaId && $n['parentId'] === null)
-        ));
+        $divisionBossId = (int) ($division['id_jf_division'] ?? 0);
 
-        // Solo si hay un root claro en gerencia
-        if (count($gerenciaRoots) !== 1) {
-            return $nodes;
+        // ✅ Si hay jefe de división y NO es el mismo root, colgarlo de gerencia
+        if ($divisionBossId > 0 && $divisionBossId !== $rootId) {
+            $nodes[] = [
+                'id'       => $divisionBossId,
+                'parentId' => $rootId,
+                'fullName' => (string)($division['jefe_division_nombre'] ?? 'Jefe de División'),
+                'cargo'    => 'Jefe de División — ' . (string)($division['nombre_division'] ?? ''),
+                'area'     => '',
+            ];
         }
 
-        $rootId = $gerenciaRoots[0];
+        // ✅ Parent base para todo lo que cuelga de la división
+        $divisionParentId = ($divisionBossId > 0 && $divisionBossId !== $rootId)
+            ? $divisionBossId
+            : $rootId;
 
-        foreach ($nodes as &$n) {
-            $isGerencia = ((int)($n['areaId'] ?? 0) === $gerenciaAreaId);
+        // =========================================================
+        // 3) Usuarios “nivel división” (cargo.id_division = división)
+        // =========================================================
+        $divisionLevelUsers = $this->model->getUsersByDivisionLevel($divisionId);
 
-            // Si no es gerencia y quedó como root, lo cuelgo del root de gerencia
-            if (!$isGerencia && $n['parentId'] === null) {
-                $n['parentId'] = $rootId;
-            }
-        }
-        unset($n);
+        foreach ($divisionLevelUsers as $u) {
+            $uid = (int)($u['id_user'] ?? 0);
+            if ($uid <= 0) continue;
 
-        return $nodes;
-    }
+            // Evitar duplicar root y jefe
+            if ($uid === $rootId) continue;
+            if ($divisionBossId > 0 && $uid === $divisionBossId) continue;
 
-    /**
-     * Reglas del área:
-     * - Asigna niveles por cargo para ordenar (visual)
-     * - Si gerente_cargo_id > 0, puede colgar raíces al gerente del área (solo si hay 1)
-     *   (En tu caso TICs lo dejamos en 0 porque el top lo da Gerencia)
-     */
-    private function applyRules(array $nodes, array $rules): array
-    {
-        $gerenteCargoId = (int)($rules['gerente_cargo_id'] ?? 0);
-        $levelsMap      = (array)($rules['levels_by_cargo_id'] ?? []);
-
-        // 1) Niveles (orden visual)
-        foreach ($nodes as &$n) {
-            $cid = (int)($n['cargoId'] ?? 0);
-            $n['level'] = $levelsMap[$cid] ?? $n['level'];
-        }
-        unset($n);
-
-        // 2) Si no hay gerente definido en el área, no forzamos enlaces
-        if ($gerenteCargoId <= 0) {
-            return $nodes;
+            $nodes[] = [
+                'id'       => $uid,
+                'parentId' => $divisionParentId,
+                'fullName' => trim((string)($u['nombres'] ?? '') . ' ' . (string)($u['apellidos'] ?? '')),
+                'cargo'    => (string)($u['nombre_cargo'] ?? 'Cargo'),
+                'area'     => '',
+            ];
         }
 
-        // 3) Buscar "gerentes" del área por cargo
-        $gerenteIds = array_values(array_map(
-            fn($n) => $n['id'],
-            array_filter($nodes, fn($n) => (int)($n['cargoId'] ?? 0) === $gerenteCargoId)
-        ));
+        // =========================================================
+        // 4) Áreas de la división + jefes de área + usuarios por área
+        // =========================================================
+        $areas = $this->model->getAreasWithBossByDivision($divisionId);
 
-        // 4) Si hay 1 gerente, cuelga raíces que NO sean gerente debajo de él
-        foreach ($nodes as &$n) {
-            $isGerente = ((int)($n['cargoId'] ?? 0) === $gerenteCargoId);
+        foreach ($areas as $a) {
+            $areaId = (int)($a['id_area'] ?? 0);
+            if ($areaId <= 0) continue;
 
-            if ($n['parentId'] === null && !$isGerente) {
-                if (count($gerenteIds) === 1) {
-                    $n['parentId'] = $gerenteIds[0];
+            $areaName = (string)($a['nombre_area'] ?? '');
+            $areaBossId = (int)($a['id_jf_area'] ?? 0);
+
+            // 4.1) Si hay jefe de área, colgarlo del jefe de división (o gerencia)
+            $areaBossNodeId = null;
+
+            if ($areaBossId > 0 && $areaBossId !== $rootId) {
+                // Si el jefe de área coincide con el jefe de división, reusamos
+                if ($divisionBossId > 0 && $areaBossId === $divisionBossId) {
+                    $areaBossNodeId = $divisionBossId;
+                } else {
+                    $nodes[] = [
+                        'id'       => $areaBossId,
+                        'parentId' => $divisionParentId,
+                        'fullName' => (string)($a['jefe_area_nombre'] ?? 'Jefe de Área'),
+                        'cargo'    => 'Jefe de Área — ' . $areaName,
+                        'area'     => $areaName,
+                    ];
+                    $areaBossNodeId = $areaBossId;
                 }
             }
-        }
-        unset($n);
 
-        return $nodes;
+            // 4.2) Parent para usuarios del área
+            $areaUsersParentId = $areaBossNodeId ?? $divisionParentId;
+
+            // 4.3) Usuarios del área
+            $areaUsers = $this->model->getUsersByArea($areaId);
+
+            foreach ($areaUsers as $u) {
+                $uid = (int)($u['id_user'] ?? 0);
+                if ($uid <= 0) continue;
+
+                // Evitar duplicados obvios
+                if ($uid === $rootId) continue;
+                if ($divisionBossId > 0 && $uid === $divisionBossId) continue;
+                if ($areaBossId > 0 && $uid === $areaBossId) continue;
+
+                $nodes[] = [
+                    'id'       => $uid,
+                    'parentId' => $areaUsersParentId,
+                    'fullName' => trim((string)($u['nombres'] ?? '') . ' ' . (string)($u['apellidos'] ?? '')),
+                    'cargo'    => (string)($u['nombre_cargo'] ?? 'Cargo'),
+                    'area'     => $areaName,
+                ];
+            }
+        }
+
+        // =========================================================
+        // 5) Quitar duplicados por id
+        // =========================================================
+        $unique = [];
+        foreach ($nodes as $n) {
+            $nid = (string)($n['id'] ?? '');
+            if ($nid === '') continue;
+            $unique[$nid] = $n;
+        }
+
+        return array_values($unique);
     }
 }

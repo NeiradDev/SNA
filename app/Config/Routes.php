@@ -6,64 +6,67 @@ use CodeIgniter\Router\RouteCollection;
  * @var RouteCollection $routes
  */
 
+// ======================================================
+// AUTENTICACIÓN
+// ======================================================
 $routes->get('/', 'Auth::login');
 $routes->get('login', 'Auth::login');
 $routes->post('auth/attempt', 'Auth::attempt');
 $routes->post('logout', 'Auth::logout');
 
+// ======================================================
+// RUTAS PROTEGIDAS (AUTH)
+// ======================================================
 $routes->group('', ['filter' => 'auth'], function (RouteCollection $routes) {
 
-    // HOME
+    // --------------------------------------------------
+    // HOME / PERFIL
+    // --------------------------------------------------
     $routes->get('home', 'Home::home');
     $routes->get('perfil', 'Perfil::index');
 
-    // ✅ Vista para editar el horario (UN SOLO HORARIO)
+    // --------------------------------------------------
+    // HORARIO PLAN / REPORTE
+    // --------------------------------------------------
     $routes->get('reporte/horario-plan', 'HorarioPlan::index');
-
-    // ✅ Ruta interna para que el sidebar consulte si el Plan está habilitado
-    // (NO /api, NO externo, lee la BD)
     $routes->get('reporte/plan-status', 'HorarioPlan::status');
-
-    // ✅ Guardar horario (AJAX interno, NO /api, lee/graba BD)
     $routes->post('reporte/horario-plan/guardar', 'HorarioPlan::save');
 
-    // ✅ Plan de Batalla protegido por horario
     $routes->get('reporte/plan', 'Reporte::plan', ['filter' => 'horarioPlan']);
     $routes->post('reporte/plan', 'Reporte::storePlan', ['filter' => 'horarioPlan']);
 
-    // ===== Usuarios =====
+    // --------------------------------------------------
+    // USUARIOS
+    // --------------------------------------------------
     $routes->group('usuarios', function (RouteCollection $routes) {
         $routes->get('', 'Usuarios::index');
         $routes->get('nuevo', 'Usuarios::create');
         $routes->post('guardar', 'Usuarios::store');
         $routes->get('editar/(:num)', 'Usuarios::edit/$1');
         $routes->post('actualizar/(:num)', 'Usuarios::update/$1');
+
+        // APIs internas
         $routes->get('api/cargos', 'Usuarios::getCargosByArea');
         $routes->get('api/supervisores', 'Usuarios::getSupervisorsByArea');
+        $routes->get('api/areas', 'Usuarios::getAreasByDivision');
+        $routes->get('api/cargos-division', 'Usuarios::getCargosByDivision');
+        $routes->get('api/gerencia-user', 'Usuarios::getGerenciaUser');
+        $routes->get('api/division-boss', 'Usuarios::getDivisionBossByDivision');
+        $routes->get('api/area-boss', 'Usuarios::getAreaBossByArea');
     });
 
-    // ===== API =====
-    $routes->group('api', function (RouteCollection $routes) {
-        $routes->get('metricas/cumplimiento', 'Api\Metricas::cumplimiento');
-    });
+    // --------------------------------------------------
+    // AGENCIAS / AREAS / DIVISION / CARGOS
+    // --------------------------------------------------
+    $routes->group('agencias', fn($r) => $r->get('', 'Agencias::index'));
+    $routes->group('areas', fn($r) => $r->get('', 'Areas::index'));
 
-    // ===== Agencias =====
-    $routes->group('agencias', function (RouteCollection $routes) {
-        $routes->get('', 'Agencias::index');
-    });
-
-    // ===== Areas =====
-    $routes->group('areas', function (RouteCollection $routes) {
-        $routes->get('', 'Areas::index');
-    });
-    // ===== Division =====
     $routes->group('division', function ($routes) {
         $routes->get('/', 'Division::index');
         $routes->get('crear', 'Division::create');
         $routes->post('guardar', 'Division::store');
     });
 
-    // ===== Cargos =====
     $routes->group('cargos', function (RouteCollection $routes) {
         $routes->get('', 'Cargos::index');
         $routes->post('create', 'Cargos::create');
@@ -71,18 +74,64 @@ $routes->group('', ['filter' => 'auth'], function (RouteCollection $routes) {
         $routes->post('update/(:num)', 'Cargos::update/$1');
         $routes->post('delete/(:num)', 'Cargos::delete/$1');
     });
-        $routes->get('areas/(:segment)', 'Areas::view/$1');
-        $routes->get('areas/orgchart-data/(:segment)', 'Areas::data/$1');
-        $routes->get('reporte/plan', 'Reporte::plan');
-        $routes->post('reporte/plan', 'Reporte::storePlan');
-        $routes->group('tareas', function ($routes) {
+
+    // --------------------------------------------------
+    // TAREAS (🔥 IMPORTANTE)
+    // --------------------------------------------------
+    $routes->group('tareas', function (RouteCollection $routes) {
+
+        // Vistas
         $routes->get('calendario', 'Tareas::calendario');
         $routes->get('asignar', 'Tareas::asignarForm');
         $routes->post('asignar', 'Tareas::asignarStore');
 
-        // API
+        $routes->get('gestionar', 'Tareas::gestionar');
+
+        $routes->get('editar/(:num)', 'Tareas::asignarForm/$1');
+        $routes->post('actualizar/(:num)', 'Tareas::actualizar/$1');
+
+        // ✅ PORCENTAJE DE SATISFACCIÓN (CORRECTO)
+        $routes->get('satisfaccion', 'Tareas::satisfaccion');
+
+        // APIs internas
         $routes->get('events', 'Tareas::events'); // ?scope=mine|assigned
         $routes->get('users-by-area/(:num)', 'Tareas::usersByArea/$1');
         $routes->post('completar/(:num)', 'Tareas::marcarCumplida/$1');
     });
+
+    // --------------------------------------------------
+    // MANTENIMIENTO
+    // --------------------------------------------------
+    $routes->group('mantenimiento', function ($routes) {
+
+        $routes->get('divisiones', 'Mantenimiento\Division::index');
+        $routes->get('divisiones/crear', 'Mantenimiento\Division::create');
+        $routes->post('divisiones/guardar', 'Mantenimiento\Division::store');
+        $routes->get('divisiones/ver/(:num)', 'Mantenimiento\Division::show/$1');
+        $routes->get('divisiones/editar/(:num)', 'Mantenimiento\Division::edit/$1');
+        $routes->post('divisiones/actualizar/(:num)', 'Mantenimiento\Division::update/$1');
+
+        $routes->get('areas', 'Mantenimiento\Area::index');
+        $routes->get('areas/crear', 'Mantenimiento\Area::create');
+        $routes->post('areas/guardar', 'Mantenimiento\Area::store');
+        $routes->get('areas/ver/(:num)', 'Mantenimiento\Area::show/$1');
+        $routes->get('areas/editar/(:num)', 'Mantenimiento\Area::edit/$1');
+        $routes->post('areas/actualizar/(:num)', 'Mantenimiento\Area::update/$1');
+
+        $routes->get('cargos', 'Mantenimiento\Cargo::index');
+        $routes->get('cargos/crear', 'Mantenimiento\Cargo::create');
+        $routes->post('cargos/guardar', 'Mantenimiento\Cargo::store');
+        $routes->get('cargos/ver/(:num)', 'Mantenimiento\Cargo::show/$1');
+        $routes->get('cargos/editar/(:num)', 'Mantenimiento\Cargo::edit/$1');
+        $routes->post('cargos/actualizar/(:num)', 'Mantenimiento\Cargo::update/$1');
+    });
+
+    // --------------------------------------------------
+    // ORGCHART
+    // --------------------------------------------------
+    $routes->group('orgchart', function ($routes) {
+        $routes->get('division/(:num)', 'OrgChart::division/$1');
+        $routes->get('api/division/(:num)', 'OrgChart::divisionData/$1');
+    });
+
 });

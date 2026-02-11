@@ -8,6 +8,7 @@ $part = $part ?? 'all';
   <style>
     .chart-card {
       background: #fff;
+      height: 260px;  
       border: 1px solid #eee;
       border-radius: 10px;
       padding: 12px;

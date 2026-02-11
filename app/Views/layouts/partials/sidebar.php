@@ -1,17 +1,9 @@
 <?php
-/**
- * Sidebar principal.
- * 
- * ✅ Importante:
- * - Para “habilitar sin refrescar”, el link debe existir siempre en el HTML.
- * - Por eso NO lo eliminamos con array_filter.
- * - Lo ocultamos/mostramos con JS consultando /api/horario-plan/status.
- */
 
 helper('horario_plan');
 
 $menuItems = [
-  [
+  /*[
     'title' => 'Dashboard',
     'icon'  => 'bi-graph-up',
     'id'    => 'submenu-dashboard',
@@ -19,13 +11,13 @@ $menuItems = [
       ['title' => 'Mi Equipo',   'url' => 'dashboard/equipo'],
       ['title' => 'Mi División', 'url' => 'dashboard/division'],
     ],
-  ],
+  ],*/
  [
   'title' => 'Reporte',
   'icon'  => 'bi-clipboard2-data',
   'id'    => 'submenu-reporte',
   'sub'   => [
-    // ✅ SIEMPRE existe el link de Plan (se oculta/mostrar por horario)
+ 
     [
       'title'           => 'Plan de Batalla',
       'url'             => 'reporte/plan',
@@ -33,13 +25,13 @@ $menuItems = [
       'initial_visible' => isPlanEnabled(),
     ],
 
-    // ✅ SIEMPRE visible: aquí editas el horario (ADMIN)
+   
     [
       'title' => 'Horario Plan',
       'url'   => 'reporte/horario-plan',
     ],
 
-    // ✅ SIEMPRE visible
+
     ['title' => 'Histórico', 'url' => 'reporte/historico'],
   ],
 ],
@@ -59,7 +51,7 @@ $menuItems = [
     ],*/
   ],
   [
-    'title' => 'Tareas',
+    'title' => 'Planificación',
     'icon'  => 'bi-calendar-check',
     'id'    => 'submenu-tareas',
     'sub'   => [
@@ -72,6 +64,17 @@ $menuItems = [
     'icon'  => 'bi-people',
     'url'   => 'usuarios'
   ],
+ [
+    'title' => 'Mantenimiento',
+    'icon'  => 'bi bi-gear',
+    'id'    => 'submenu-mantenimiento',
+    'sub'   => [
+      ['title' => 'Divisiones', 'url' => 'mantenimiento/divisiones'],
+      ['title' => 'Areas',   'url' => 'mantenimiento/areas'],
+      ['title' => 'Cargos',   'url' => 'mantenimiento/cargos'],
+     
+    ],
+ ]
 ];
 
 /**

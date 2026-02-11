@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 namespace App\Services;
 
 use App\Models\PlanBatallaModel;
@@ -7,87 +9,159 @@ use App\Models\UsuarioModel;
 
 class PlanBatallaService
 {
+    // Modelo que guarda el snapshot semanal en historico
     private PlanBatallaModel $planModel;
+
+    // Modelo para traer el perfil del usuario con joins
     private UsuarioModel $usuarioModel;
 
-    public function __construct(?PlanBatallaModel $planModel = null, ?UsuarioModel $usuarioModel = null)
+    public function __construct()
     {
-        $this->planModel = $planModel ?? new PlanBatallaModel();
-        $this->usuarioModel = $usuarioModel ?? new UsuarioModel();
+        $this->planModel    = new PlanBatallaModel();
+        $this->usuarioModel = new UsuarioModel();
     }
 
-    public function createFromUserSessionAndPost(array $post): array
+    /**
+     * Obtiene el perfil del usuario con joins
+     */
+    public function getUserProfile(int $idUser): ?array
     {
-        $idUser = (int) (session()->get('id_user') ?? 0);
-        if ($idUser <= 0) {
-            return ['success' => false, 'error' => 'Sesión inválida.'];
+        return $this->usuarioModel->getUserProfileForPlan($idUser);
+    }
+
+    /**
+     * Guarda el Plan de Batalla en public.historico
+     */
+    public function savePlanToHistorico(int $idUser, array $post): array
+    {
+        $profile = $this->getUserProfile($idUser);
+
+        if (!$profile) {
+            return [
+                'ok'     => false,
+                'errors' => ['general' => 'No se encontró el perfil del usuario.'],
+            ];
         }
 
-        // Perfil completo desde BD (área/cargo/supervisor)
-        $perfil = $this->usuarioModel->getUserProfileForPlan($idUser);
-        if (!$perfil) {
-            return ['success' => false, 'error' => 'No se pudo cargar el perfil del usuario.'];
+        $data = $this->buildHistoricoData($profile, $post);
+
+        if (empty($data['semana'])) {
+            return [
+                'ok'     => false,
+                'errors' => ['general' => 'No se pudo calcular la semana de corte.'],
+            ];
         }
 
-        $cond = trim((string)($post['condicion'] ?? ''));
-        $allowed = ['AFLUENCIA', 'NORMAL', 'EMERGENCIA', 'PELIGRO','INEXISTENCIA'];
-        if (!in_array($cond, $allowed, true)) {
-            return ['success' => false, 'error' => 'Selecciona una condición válida.'];
+        $ok = $this->planModel->upsertHistorico($data);
+
+       if (!$ok) {
+    return [
+        'ok'     => false,
+        'errors' => [
+            'general' => 'Error guardando el Plan de Batalla en la base de datos.',
+        ],
+    ];
+}
+
+
+        return ['ok' => true];
+    }
+
+    /**
+     * Regla de negocio:
+     * Semana SIEMPRE corta el miércoles
+     * Jueves a martes pertenecen al miércoles anterior
+     */
+    private function currentWeekStart(): string
+    {
+        $tz = new \DateTimeZone('America/Guayaquil');
+        $dt = new \DateTime('now', $tz);
+        $dt->setTime(0, 0, 0);
+
+        // ISO-8601: 1=Lunes ... 7=Domingo
+        $dayOfWeek = (int) $dt->format('N');
+
+        if ($dayOfWeek >= 4) {
+            // Jueves (4) a Domingo (7)
+            $dt->modify('wednesday this week');
+        } else {
+            // Lunes (1) a Miércoles (3)
+            $dt->modify('wednesday last week');
         }
 
-        // Preguntas obligatorias
-        $preguntas = $post['preguntas'] ?? null;
-        if (!is_array($preguntas) || count($preguntas) === 0) {
-            return ['success' => false, 'error' => 'Debes responder todas las preguntas.'];
-        }
+        return $dt->format('Y-m-d');
+    }
 
-        $clean = [];
-        $i = 1;
-        foreach ($preguntas as $p) {
-            $q = trim((string)($p['q'] ?? ''));
-            $a = trim((string)($p['a'] ?? ''));
+    /**
+     * Convierte preguntas del POST a JSON limpio
+     */
+    private function buildPreguntasJson(array $post): string
+    {
+        $rows  = [];
+        $items = $post['preguntas'] ?? [];
 
-            if ($q === '') {
-                return ['success' => false, 'error' => 'Error interno: falta el texto de una pregunta.'];
+        foreach ($items as $row) {
+            $q = trim((string) ($row['q'] ?? ''));
+            $a = trim((string) ($row['a'] ?? ''));
+
+            if ($q === '' && $a === '') {
+                continue;
             }
-            if ($a === '') {
-                return ['success' => false, 'error' => "La respuesta #{$i} es obligatoria."];
-            }
 
-            $clean[] = ['q' => $q, 'a' => $a];
-            $i++;
+            $rows[] = [
+                'q' => $q,
+                'a' => $a,
+            ];
         }
 
-        $areaNombre = trim((string)($perfil['nombre_area'] ?? ''));
-        $cargoNombre = trim((string)($perfil['nombre_cargo'] ?? ''));
-        $jefeNombre  = trim((string)($perfil['supervisor_nombre'] ?? ''));
+        return json_encode($rows, JSON_UNESCAPED_UNICODE);
+    }
 
-        $data = [
-            'id_user'        => (int)$perfil['id_user'],
-            'cedula'         => (string)$perfil['cedula'],
-            'nombres'        => (string)$perfil['nombres'],
-            'apellidos'      => (string)$perfil['apellidos'],
+    /**
+     * Arma el payload alineado a la tabla public.historico
+     */
+    private function buildHistoricoData(array $profile, array $post): array
+    {
+        return [
+            // =========================
+            // CLAVE DE CORTE SEMANAL
+            // =========================
+            'semana' => $this->currentWeekStart(),
 
-            'id_area'        => $perfil['id_area'] !== null ? (int)$perfil['id_area'] : null,
-            'area_nombre'    => $areaNombre !== '' ? $areaNombre : 'N/D',
+            // Campo libre
+            'estado' => null,
 
-            'id_cargo'       => $perfil['id_cargo'] !== null ? (int)$perfil['id_cargo'] : null,
-            'cargo_nombre'   => $cargoNombre !== '' ? $cargoNombre : 'N/D',
+            // =========================
+            // RELACIONES
+            // =========================
+            'id_user'       => (int) ($profile['id_user'] ?? 0),
+            'id_agencias'   => !empty($profile['id_agencias']) ? (int) $profile['id_agencias'] : null,
+            'id_division'   => !empty($profile['id_division']) ? (int) $profile['id_division'] : null,
+            'id_area'       => !empty($profile['id_area']) ? (int) $profile['id_area'] : null,
+            'id_cargo'      => !empty($profile['id_cargo']) ? (int) $profile['id_cargo'] : null,
+            'id_supervisor' => !empty($profile['id_supervisor']) ? (int) $profile['id_supervisor'] : null,
 
-            // Jefe inmediato por id_supervisor (si no hay => N/D)
-            'id_supervisor'  => $perfil['id_supervisor'] !== null ? (int)$perfil['id_supervisor'] : null,
-            'jefe_inmediato' => $jefeNombre !== '' ? $jefeNombre : 'N/D',
+            // =========================
+            // SNAPSHOT PERSONAL
+            // =========================
+            'nombres'   => (string) ($profile['nombres'] ?? ''),
+            'apellidos' => (string) ($profile['apellidos'] ?? ''),
+            'cedula'    => (string) ($profile['cedula'] ?? ''),
 
-            'condicion'      => $cond,
-            'preguntas_json' => json_encode($clean, JSON_UNESCAPED_UNICODE),
+            // =========================
+            // SNAPSHOT ORGANIZACIONAL
+            // =========================
+            'area_nombre'    => (string) ($profile['nombre_area'] ?? 'N/D'),
+            'cargo_nombre'   => (string) ($profile['nombre_cargo'] ?? 'N/D'),
+            'jefe_inmediato' => (string) ($profile['supervisor_nombre'] ?? 'Sin superior'),
+
+            // =========================
+            // DATOS DEL FORMULARIO
+            // =========================
+            'condicion'     => (string) ($post['condicion'] ?? ''),
+            'preguntas_json'=> $this->buildPreguntasJson($post),
+            'satisfaccion'  => (float) ($post['satisfaccion'] ?? 0), 
         ];
-
-        try {
-            $this->planModel->insert($data);
-        } catch (\Throwable $e) {
-            return ['success' => false, 'error' => 'Error guardando en BD: ' . $e->getMessage()];
-        }
-
-        return ['success' => true];
     }
+    
 }

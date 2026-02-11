@@ -1,5 +1,6 @@
 <?= $this->extend('layouts/main') ?>
 <?= $this->section('contenido') ?>
+
 <section>
 <style>
 @import url(https://fonts.googleapis.com/css?family=Roboto:400,500,700);
@@ -86,67 +87,91 @@ html, body {
 }
 </style>
 </section>
-<?php
-$divisiones = [
-    [
-        'nombre' => 'T.I',
-        'jefe'   => 'Juan Pérez',
-        'areas'  => 'Soporte, Desarrollo, Infraestructura',
-        'img'    => 'https://tugimnasiacerebral.com/sites/default/files/inline-images/tecnologia-de-la-informacion-y-educacion_1.jpg'
-    ],
-    [
-        'nombre' => 'Marketing',
-        'jefe'   => 'Ana López',
-        'areas'  => 'Publicidad, RRSS, Branding',
-        'img'    => 'https://tugimnasiacerebral.com/sites/default/files/inline-images/tecnologia-de-la-informacion-y-educacion_1.jpg'
-    ],
-    [
-        'nombre' => 'Finanzas',
-        'jefe'   => 'Carlos Gómez',
-        'areas'  => 'Contabilidad, Tesorería',
-        'img'    => 'https://tugimnasiacerebral.com/sites/default/files/inline-images/tecnologia-de-la-informacion-y-educacion_1.jpg'
-    ],
-];
-?>
+
 <section class="wrapper">
-    <div class="container-fostrap">
-        <h1 class="heading">Divisiones BESTPC SAS</h1>
+  <div class="container-fostrap">
+    <h1 class="heading">Divisiones BESTPC SAS</h1>
 
-        <div class="container">
-            <div class="row">
+    <div class="container">
+      <div class="row">
 
-                <?php foreach ($divisiones as $division): ?>
-                    <div class="col-12 col-sm-4 mb-3">
-                        <div class="card h-100">
+        <?php
+          // ✅ Aseguramos que exista
+          $divisiones = $divisiones ?? [];
+        ?>
 
-                            <div class="img-card">
-                                <img src="<?= esc($division['img']) ?>" alt="<?= esc($division['nombre']) ?>">
-                            </div>
+        <?php if (empty($divisiones)): ?>
+          <div class="col-12">
+            <div class="alert alert-light border text-center">
+              No hay divisiones registradas para mostrar.
+            </div>
+          </div>
+        <?php endif; ?>
 
-                            <div class="card-content">
-                                <h5 class="card-title text-center mb-2">
-                                    <?= esc($division['nombre']) ?>
-                                </h5>
+        <?php foreach ($divisiones as $division): ?>
+          <?php
+            // ✅ Variables seguras
+            $nombre = (string) ($division['nombre'] ?? '');
+            $jefe   = (string) ($division['jefe'] ?? 'No asignado');
+            $img    = (string) ($division['img'] ?? 'https://picsum.photos/seed/division-default/900/500');
 
-                                <p class="card-text small text-muted mb-0">
-                                    <strong>Jefe de división:</strong> <?= esc($division['jefe']) ?><br>
-                                    <strong>Áreas a cargo:</strong> <?= esc($division['areas']) ?>
-                                </p>
-                            </div>
+            // ✅ Áreas
+            $areasArr = $division['areas'] ?? [];
+            if (!is_array($areasArr)) $areasArr = [];
 
-                            <div class="card-action">
-                                <button class="btn btn-outline-primary btn-sm">
-                                    Organigrama
-                                </button>
-                            </div>
+            // ✅ Texto compacto de áreas (coma)
+            $areasTxt = !empty($areasArr) ? implode(', ', array_map('strval', $areasArr)) : 'Sin áreas asignadas';
+          ?>
 
-                        </div>
-                    </div>
-                <?php endforeach; ?>
+          <div class="col-12 col-sm-4 mb-3">
+            <div class="card h-100">
+
+              <div class="img-card">
+                <img src="<?= esc($img) ?>" alt="<?= esc($nombre) ?>">
+              </div>
+
+              <div class="card-content">
+                <h5 class="card-title text-center mb-2">
+                  <?= esc($nombre) ?>
+                </h5>
+
+                <p class="card-text small text-muted mb-0">
+                  <strong>Jefe de división:</strong> <?= esc($jefe) ?><br>
+                  <strong>Áreas a cargo:</strong> <?= esc($areasTxt) ?>
+                </p>
+              </div>
+
+             <div class="card-action">
+  <button type="button"
+          class="btn btn-outline-primary btn-sm btn-org"
+          data-division-id="<?= (int) $division['id_division'] ?>">
+    Organigrama
+  </button>
+</div>
+
+
 
             </div>
-        </div>
+          </div>
+        <?php endforeach; ?>
+
+      </div>
     </div>
+  </div>
 </section>
+
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+  document.querySelectorAll('.btn-org[data-division-id]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const id = btn.getAttribute('data-division-id');
+      if (!id) return;
+
+      // ✅ Redirección al organigrama de la división
+      window.location.href = "<?= base_url('orgchart/division') ?>/" + encodeURIComponent(id);
+    });
+  });
+});
+</script>
 
 <?= $this->endSection() ?>

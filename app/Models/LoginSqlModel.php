@@ -18,13 +18,21 @@ class LoginSqlModel extends Model
                 u.apellidos,
                 u.cedula,
                 u.password,
+
+                -- Convertimos boolean a 1/0 como ya lo venías usando
                 (CASE WHEN u.activo THEN 1 ELSE 0 END) AS activo_int,
-                u.id_area,
+
+                -- ✅ En la base nueva NO existe u.id_area.
+                -- El área viene desde el cargo (si el cargo es de área).
+                c.id_area AS id_area,
+
                 u.id_agencias,
                 u.id_cargo,
+
                 c.nombre_cargo
             FROM public."USER" u
-            LEFT JOIN public.cargo c ON c.id_cargo = u.id_cargo
+            LEFT JOIN public.cargo c
+                ON c.id_cargo = u.id_cargo
             WHERE u.cedula = ?
             LIMIT 1
         ';

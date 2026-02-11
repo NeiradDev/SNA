@@ -7,6 +7,7 @@
         <th class="py-3 border-0 text-muted small fw-bold text-uppercase">Nombre Completo</th>
         <th class="py-3 border-0 text-muted small fw-bold text-uppercase">Documento</th>
         <th class="py-3 border-0 text-muted small fw-bold text-uppercase">Cargo</th>
+         <th class="py-3 border-0 text-muted small fw-bold text-uppercase">Division</th>
         <th class="py-3 border-0 text-muted small fw-bold text-uppercase">Área</th>
         <th class="py-3 border-0 text-muted small fw-bold text-uppercase">Supervisor</th>
         <th class="py-3 border-0 text-muted small fw-bold text-uppercase">Agencia</th>
@@ -24,6 +25,7 @@
             </td>
             <td><?= esc($user['cedula'] ?? '') ?></td>
             <td><span class="badge bg-light text-dark border fw-normal"><?= esc($user['nombre_cargo'] ?? $user['id_cargo'] ?? '—') ?></span></td>
+            <td><?= esc($user['nombre_division'] ?? '-') ?></td>
             <td><?= esc($user['nombre_area'] ?? '—') ?></td>
             <td><?= esc($user['supervisor_nombre'] ?? '—') ?></td>
             <td><?= esc($user['nombre_agencia'] ?? '—') ?></td>

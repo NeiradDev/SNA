@@ -23,4 +23,15 @@ class Services extends BaseService
             \Config\Services::validation()
         );
     }
+    public static function divisionService(bool $getShared = true)
+{
+    if ($getShared) {
+        return static::getSharedInstance('divisionService');
+    }
+
+    return new \App\Services\DivisionService(
+        new \App\Models\DivisionModel()
+    );
+}
+
 }

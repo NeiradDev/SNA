@@ -6,14 +6,6 @@ use App\Models\TareaModel;
 use App\Models\UsuarioModel;
 use Config\Database;
 
-/**
- * TareaService
- *
- * Lógica de negocio central de TAREAS
- * - El Controller SOLO llama a este Service
- * - El Service valida reglas
- * - El Model ejecuta BD
- */
 class TareaService
 {
     private TareaModel $tareaModel;
@@ -49,7 +41,6 @@ class TareaService
             return ['success' => false, 'error' => 'La fecha de inicio es obligatoria.'];
         }
 
-        // Determinar área real
         $areaAsignador = (int)(session()->get('id_area') ?? 0);
         $esGerencia    = ($areaAsignador === 1);
         $idArea        = $esGerencia ? $idAreaPost : $areaAsignador;
@@ -58,8 +49,8 @@ class TareaService
             return ['success' => false, 'error' => 'Área inválida.'];
         }
 
-        // Validar usuario pertenece al área
-        $usuarios = $this->tareaModel->getAssignableUsersByArea($idArea);
+        $usuarios = $this->tareaModel->getUsersByArea($idArea);
+
         $ids      = array_map(fn($u) => (int)$u['id_user'], $usuarios);
 
         if (!in_array($asignadoA, $ids, true)) {
@@ -87,7 +78,7 @@ class TareaService
     }
 
     // ==================================================
-    // EVENTOS PARA FULLCALENDAR
+    // EVENTOS FULLCALENDAR
     // ==================================================
     public function getCalendarEvents(int $userId, string $scope): array
     {
@@ -123,6 +114,7 @@ ORDER BY t.fecha_inicio DESC
 SQL;
 
         $rows = $db->query($sql, [$userId])->getResultArray();
+
         $events = [];
 
         foreach ($rows as $r) {
@@ -148,7 +140,7 @@ SQL;
     }
 
     // ==================================================
-    // MARCAR COMO COMPLETADA
+    // MARCAR COMO REALIZADA (3 = Realizada)
     // ==================================================
     public function markDone(int $taskId, int $currentUserId): array
     {
@@ -175,7 +167,7 @@ SQL;
     }
 
     // ==================================================
-    // ACTUALIZAR / REASIGNAR TAREA
+    // ACTUALIZAR / REASIGNAR
     // ==================================================
     public function updateTask(
         int $idTarea,
@@ -183,6 +175,7 @@ SQL;
         int $currentUserId,
         int $currentUserAreaId
     ): array {
+
         $task = $this->tareaModel->find($idTarea);
 
         if (!$task) {
@@ -197,46 +190,95 @@ SQL;
             return ['success' => false, 'error' => 'No autorizado.'];
         }
 
-        $update = [];
+      $update = [];
 
-        if (isset($data['id_estado_tarea'])) {
-            $update['id_estado_tarea'] = (int)$data['id_estado_tarea'];
-        }
+// ========================================
+// CAMPOS PRINCIPALES EDITABLES
+// ========================================
 
-        if (isset($data['fecha_inicio'])) {
-            $update['fecha_inicio'] = $data['fecha_inicio'];
-        }
+if (isset($data['titulo'])) {
+    $update['titulo'] = trim($data['titulo']);
+}
 
-        if (array_key_exists('fecha_fin', $data)) {
-            $update['fecha_fin'] = $data['fecha_fin'] ?: null;
-        }
+if (array_key_exists('descripcion', $data)) {
+    $update['descripcion'] = trim($data['descripcion']) ?: null;
+}
 
-        if (isset($data['asignado_a']) && ($esCreador || $esGerencia)) {
-            $usuarios = $this->tareaModel->getAssignableUsersByArea((int)$task['id_area']);
-            $ids      = array_map(fn($u) => (int)$u['id_user'], $usuarios);
+if (isset($data['id_prioridad'])) {
+    $update['id_prioridad'] = (int)$data['id_prioridad'];
+}
 
-            if (!in_array((int)$data['asignado_a'], $ids, true)) {
-                return ['success' => false, 'error' => 'Usuario no válido para el área.'];
-            }
+if (isset($data['id_area']) && ($esCreador || $esGerencia)) {
+    $update['id_area'] = (int)$data['id_area'];
+}
 
-            $update['asignado_a'] = (int)$data['asignado_a'];
-        }
+// ========================================
+// ESTADO Y COMPLETED_AT
+// ========================================
 
-        if (empty($update)) {
-            return ['success' => false, 'error' => 'No hay cambios para guardar.'];
-        }
+if (isset($data['id_estado_tarea'])) {
 
-        try {
-            $this->tareaModel->update($idTarea, $update);
-        } catch (\Throwable $e) {
-            return ['success' => false, 'error' => 'Error actualizando la tarea.'];
-        }
+    $estado = (int)$data['id_estado_tarea'];
+    $update['id_estado_tarea'] = $estado;
 
-        return ['success' => true];
+    if ($estado === 3) {
+        $update['completed_at'] = date('Y-m-d H:i:s');
+    } else {
+        $update['completed_at'] = null;
+    }
+}
+
+// ========================================
+// FECHAS
+// ========================================
+
+if (isset($data['fecha_inicio'])) {
+    $update['fecha_inicio'] = $data['fecha_inicio'];
+}
+
+if (array_key_exists('fecha_fin', $data)) {
+    $update['fecha_fin'] = $data['fecha_fin'] ?: null;
+}
+
+// ========================================
+// REASIGNACIÓN
+// ========================================
+
+if (isset($data['asignado_a']) && ($esCreador || $esGerencia)) {
+
+    // Si se cambió área, validar contra nueva área
+    $areaValidacion = $update['id_area'] ?? $task['id_area'];
+
+    $usuarios = $this->tareaModel->getUsersByArea((int)$areaValidacion);
+    $ids      = array_map(fn($u) => (int)$u['id_user'], $usuarios);
+
+    if (!in_array((int)$data['asignado_a'], $ids, true)) {
+        return ['success' => false, 'error' => 'Usuario no válido para el área.'];
+    }
+
+    $update['asignado_a'] = (int)$data['asignado_a'];
+}
+
+// ========================================
+// VALIDAR CAMBIOS
+// ========================================
+
+if (empty($update)) {
+    return ['success' => false, 'error' => 'No hay cambios para guardar.'];
+}
+
+try {
+    $this->tareaModel->update($idTarea, $update);
+} catch (\Throwable $e) {
+    return ['success' => false, 'error' => 'Error actualizando la tarea.'];
+}
+
+return ['success' => true];
+
     }
 
     // ==================================================
-    // CONTEXTO ORGANIZACIONAL / CATÁLOGOS
+    // CATÁLOGOS
     // ==================================================
     public function getDivisionByUser(int $idUser): ?array
     {
@@ -249,10 +291,10 @@ SQL;
     }
 
     public function getUsersByArea(int $idArea): array
-    {
-        return $this->tareaModel->getAssignableUsersByArea($idArea);
-        return $this->tareaModel->getUsersByArea($areaId);
-    }
+{
+    return $this->tareaModel->getUsersByArea($idArea);
+}
+
 
     public function getPrioridades(): array
     {
@@ -263,17 +305,15 @@ SQL;
     {
         return $this->tareaModel->getEstadosTarea();
     }
-    // ==================================================
-// GESTIÓN DE TAREAS (MIS TAREAS + ASIGNADAS POR MÍ)
-// ==================================================
-// ==================================================
-// TAREAS PARA GESTIÓN (MIS TAREAS / ASIGNADAS POR MÍ)
-// ==================================================
-public function getTasksForManagement(int $idUser): array
-{
-    $db = Database::connect();
 
-    $sql = <<<SQL
+    // ==================================================
+    // GESTIÓN DE TAREAS
+    // ==================================================
+    public function getTasksForManagement(int $idUser): array
+    {
+        $db = Database::connect();
+
+        $sql = <<<SQL
 SELECT
     t.id_tarea,
     t.titulo,
@@ -281,11 +321,9 @@ SELECT
     t.fecha_fin,
     t.asignado_a,
     t.asignado_por,
-
     p.nombre_prioridad,
     e.nombre_estado,
     ar.nombre_area,
-
     ua.nombres || ' ' || ua.apellidos AS asignado_a_nombre
 FROM public.tareas t
 JOIN public.prioridad p    ON p.id_prioridad = t.id_prioridad
@@ -297,91 +335,68 @@ WHERE t.asignado_a = ?
 ORDER BY t.fecha_inicio DESC
 SQL;
 
-    $rows = $db->query($sql, [$idUser, $idUser])->getResultArray();
+        $rows = $db->query($sql, [$idUser, $idUser])->getResultArray();
 
-    $misTareas       = [];
-    $tareasAsignadas = [];
+        $misTareas       = [];
+        $tareasAsignadas = [];
 
-    foreach ($rows as $r) {
-        if ((int)$r['asignado_a'] === $idUser) {
-            $misTareas[] = $r;
+        foreach ($rows as $r) {
+
+            if ((int)$r['asignado_a'] === $idUser) {
+                $misTareas[] = $r;
+            }
+
+            if ((int)$r['asignado_por'] === $idUser) {
+                $tareasAsignadas[] = $r;
+            }
         }
 
-        if ((int)$r['asignado_por'] === $idUser) {
-            $tareasAsignadas[] = $r;
+        return [
+            'misTareas'        => $misTareas,
+            'tareasAsignadas'  => $tareasAsignadas,
+        ];
+    }
+
+    // ==================================================
+    // OBTENER TAREA PARA EDICIÓN
+    // ==================================================
+    public function getTaskById(int $idTarea, int $currentUserId): ?array
+    {
+        $task = $this->tareaModel->find($idTarea);
+
+        if (!$task) {
+            return null;
         }
+
+        $esAsignado = ((int)$task['asignado_a'] === $currentUserId);
+        $esCreador  = ((int)$task['asignado_por'] === $currentUserId);
+        $esGerencia = ((int)session()->get('id_area') === 1);
+
+        if (!$esAsignado && !$esCreador && !$esGerencia) {
+            return null;
+        }
+
+        return $task;
     }
 
-    return [
-        'misTareas'       => $misTareas,
-        'tareasAsignadas'=> $tareasAsignadas,
-    ];
-}
+    // ==================================================
+    // SATISFACCIÓN
+    // ==================================================
+    public function getSatisfaccionActual(int $idUser): array
+    {
+        $db = Database::connect();
 
-// ==================================================
-// OBTENER TAREA PARA EDICIÓN
-// ==================================================
-public function getTaskById(int $idTarea, int $currentUserId): ?array
-{
-    $task = $this->tareaModel->find($idTarea);
+        $hoy = new \DateTime();
+        $diaSemana = (int)$hoy->format('N');
 
-    if (!$task) {
-        return null;
-    }
+        $inicio = clone $hoy;
+        $inicio->modify('-' . (($diaSemana >= 4 ? $diaSemana - 4 : $diaSemana + 3)) . ' days');
+        $inicio->setTime(0, 0, 0);
 
-    $esAsignado = ((int)$task['asignado_a'] === $currentUserId);
-    $esCreador  = ((int)$task['asignado_por'] === $currentUserId);
-    $esGerencia = ((int)session()->get('id_area') === 1);
+        $fin = clone $inicio;
+        $fin->modify('+6 days')->setTime(23, 59, 59);
 
-    if (!$esAsignado && !$esCreador && !$esGerencia) {
-        return null;
-    }
-
-    return $task;
-}
-
-// ==================================================
-// OBTENER TAREA PARA EDICIÓN
-// ==================================================
-public function getTaskForEdit(int $idTarea, int $currentUserId): ?array
-{
-    $task = $this->tareaModel->find($idTarea);
-
-    if (!$task) {
-        return null;
-    }
-
-    $esAsignado = ((int)$task['asignado_a'] === $currentUserId);
-    $esCreador  = ((int)$task['asignado_por'] === $currentUserId);
-    $esGerencia = ((int)session()->get('id_area') === 1);
-
-    if (!$esAsignado && !$esCreador && !$esGerencia) {
-        return null;
-    }
-
-    return $task;
-}
-// ==================================================
-// PORCENTAJE DE SATISFACCIÓN (EN VIVO)
-// ==================================================
-
-public function getSatisfaccionActual(int $idUser): array
-{
-    $db = Database::connect();
-
-    // ===== rango jueves → miércoles =====
-    $hoy = new \DateTime();
-    $diaSemana = (int)$hoy->format('N'); // 1=lunes ... 7=domingo
-
-    $inicio = clone $hoy;
-    $inicio->modify('-' . (($diaSemana >= 4 ? $diaSemana - 4 : $diaSemana + 3)) . ' days');
-    $inicio->setTime(0, 0, 0);
-
-    $fin = clone $inicio;
-    $fin->modify('+6 days')->setTime(23, 59, 59);
-
-    // ===== QUERY REAL =====
-    $sql = <<<SQL
+        $sql = <<<SQL
 SELECT
     SUM(CASE WHEN id_estado_tarea = 3 THEN 1 ELSE 0 END) AS realizadas,
     SUM(CASE WHEN id_estado_tarea = 4 THEN 1 ELSE 0 END) AS no_realizadas
@@ -392,53 +407,26 @@ WHERE
     AND id_estado_tarea IN (3,4)
 SQL;
 
-    $row = $db->query($sql, [
-        'u'   => $idUser,
-        'ini' => $inicio->format('Y-m-d H:i:s'),
-        'fin' => $fin->format('Y-m-d H:i:s'),
-    ])->getRowArray();
+        $row = $db->query($sql, [
+            'u'   => $idUser,
+            'ini' => $inicio->format('Y-m-d H:i:s'),
+            'fin' => $fin->format('Y-m-d H:i:s'),
+        ])->getRowArray();
 
-    $realizadas   = (int)($row['realizadas'] ?? 0);
-    $noRealizadas = (int)($row['no_realizadas'] ?? 0);
-    $total        = $realizadas + $noRealizadas;
+        $realizadas   = (int)($row['realizadas'] ?? 0);
+        $noRealizadas = (int)($row['no_realizadas'] ?? 0);
+        $total        = $realizadas + $noRealizadas;
 
-    $porcentaje = $total > 0
-        ? round(($realizadas / $total) * 100, 2)
-        : 0;
+        $porcentaje = $total > 0
+            ? round(($realizadas / $total) * 100, 2)
+            : 0;
 
-    return [
-        'porcentaje'    => $porcentaje,
-        'realizadas'    => $realizadas,
-        'no_realizadas' => $noRealizadas,
-        'inicio'        => $inicio->format('Y-m-d'),
-        'fin'           => $fin->format('Y-m-d'),
-    ];
-}
-public function plan()
-{
-    if (!session()->get('logged_in')) {
-        return redirect()->to(site_url('login'));
+        return [
+            'porcentaje'    => $porcentaje,
+            'realizadas'    => $realizadas,
+            'no_realizadas' => $noRealizadas,
+            'inicio'        => $inicio->format('Y-m-d'),
+            'fin'           => $fin->format('Y-m-d'),
+        ];
     }
-
-    $idUser = (int) session()->get('id_user');
-
-    // MODELOS
-    $usuarioModel = new UsuarioModel();
-
-    // SERVICES
-    $tareaService = new TareaService();
-
-    return view('reporte/plan', [
-        // 👇 perfil viene del UsuarioModel (CORRECTO)
-        'perfil'       => $usuarioModel->getUserProfileForPlan($idUser),
-
-        // 👇 porcentaje viene del TareaService (CORRECTO)
-        'satisfaccion' => $tareaService->getSatisfaccionActual($idUser),
-
-        'old'     => session()->getFlashdata('old') ?? [],
-        'error'   => session()->getFlashdata('error'),
-        'success' => session()->getFlashdata('success'),
-    ]);
-}
-
 }

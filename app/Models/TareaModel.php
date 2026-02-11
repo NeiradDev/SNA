@@ -77,22 +77,7 @@ class TareaModel extends Model
     /**
      * Usuarios activos asignables de un área
      */
-    public function getAssignableUsersByArea(int $idArea): array
-    {
-        return $this->db->table('public."USER" u')
-            ->select("
-                u.id_user,
-                CONCAT(u.nombres, ' ', u.apellidos) AS nombre_completo,
-                c.nombre_cargo
-            ")
-            ->join('public.cargo c', 'c.id_cargo = u.id_cargo', 'left')
-            ->where('c.id_area', $idArea)
-            ->where('u.activo', true)
-            ->orderBy('nombre_completo', 'ASC')
-            ->get()
-            ->getResultArray();
-    }
-
+  
     public function getPrioridades(): array
 {
     return $this->db->table('public.prioridad')
@@ -167,7 +152,6 @@ public function getUsersByArea(int $areaId): array
 
     return $this->db->query($sql, [$areaId])->getResultArray();
 }
-
 
 
 }

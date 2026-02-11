@@ -149,6 +149,91 @@ $condicionFinal = $condicionAuto !== '' ? $condicionAuto : $oldCond;
     <hr class="my-3">
 
     <div id="preguntasWrap" class="mt-2"></div>
+<hr class="my-4">
+
+<h5 class="fw-bold mb-3">DESCRIPCIÓN DEL PLAN DE BATALLA</h5>
+
+<div class="row g-3">
+
+  <!-- ACTIVIDADES URGENTES -->
+  <div class="col-12">
+    <div class="card shadow-sm p-3">
+      <label class="form-label fw-bold text-danger">
+        ACTIVIDADES URGENTES
+      </label>
+      <textarea class="form-control"
+                name="descripcion[actividades_urgentes]"
+                rows="3"
+                placeholder="Describe las actividades urgentes de esta semana..."></textarea>
+    </div>
+  </div>
+
+  <!-- ACTIVIDADES PENDIENTES -->
+  <div class="col-12">
+    <div class="card shadow-sm p-3">
+      <label class="form-label fw-bold">
+        ACTIVIDADES PENDIENTES
+      </label>
+      <textarea class="form-control"
+                name="descripcion[actividades_pendientes]"
+                rows="3"
+                placeholder="Actividades que deben completarse próximamente..."></textarea>
+    </div>
+  </div>
+
+  <!-- ORDENES QUE DEBO CUMPLIR -->
+  <div class="col-12">
+    <div class="card shadow-sm p-3">
+      <label class="form-label fw-bold">
+        ÓRDENES QUE DEBO CUMPLIR
+      </label>
+      <textarea class="form-control"
+                name="descripcion[ordenes_personales]"
+                rows="3"
+                placeholder="Órdenes o directrices que debo ejecutar..."></textarea>
+    </div>
+  </div>
+
+  <!-- ORDENES JUNIORS -->
+  <div class="col-12">
+    <div class="card shadow-sm p-3">
+      <label class="form-label fw-bold">
+        ÓRDENES QUE DEBEN REALIZAR MIS JUNIORS
+      </label>
+      <textarea class="form-control"
+                name="descripcion[ordenes_juniors]"
+                rows="3"
+                placeholder="Instrucciones para el equipo o juniors..."></textarea>
+    </div>
+  </div>
+
+  <!-- CUOTAS -->
+  <div class="col-12">
+    <div class="card shadow-sm p-3">
+      <label class="form-label fw-bold">
+        CUOTAS PARA LA SEMANA
+      </label>
+      <textarea class="form-control"
+                name="descripcion[cuotas_semana]"
+                rows="3"
+                placeholder="Metas numéricas o cuotas asignadas..."></textarea>
+    </div>
+  </div>
+
+  <!-- OBJETIVOS ESTRATÉGICOS -->
+  <div class="col-12">
+    <div class="card shadow-sm p-3">
+      <label class="form-label fw-bold text-primary">
+        OBJETIVOS QUE CONTRIBUYEN AL PLAN ESTRATÉGICO
+      </label>
+      <textarea class="form-control"
+                name="descripcion[objetivos_estrategicos]"
+                rows="3"
+                placeholder="Objetivos alineados a la estrategia organizacional..."></textarea>
+    </div>
+  </div>
+
+</div>
 
     <div class="d-flex justify-content-end mt-3">
       <button class="btn btn-primary">

@@ -87,7 +87,7 @@ $routes->group('', ['filter' => 'auth'], function (RouteCollection $routes) {
 
         $routes->get('gestionar', 'Tareas::gestionar');
 
-        $routes->get('editar/(:num)', 'Tareas::asignarForm/$1');
+        $routes->get('editar/(:num)', 'Tareas::editar/$1');
         $routes->post('actualizar/(:num)', 'Tareas::actualizar/$1');
 
         // ✅ PORCENTAJE DE SATISFACCIÓN (CORRECTO)

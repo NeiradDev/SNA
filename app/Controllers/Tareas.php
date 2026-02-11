@@ -4,12 +4,6 @@ namespace App\Controllers;
 
 use App\Services\TareaService;
 
-/**
- * Controller: Tareas
- *
- * ❌ No lógica de negocio
- * ✅ Orquesta vistas y endpoints
- */
 class Tareas extends BaseController
 {
     private TareaService $service;
@@ -20,7 +14,7 @@ class Tareas extends BaseController
     }
 
     // ==================================================
-    // Seguridad básica
+    // SEGURIDAD
     // ==================================================
     private function requireLogin()
     {
@@ -31,7 +25,7 @@ class Tareas extends BaseController
     }
 
     // ==================================================
-    // Vista: calendario
+    // CALENDARIO
     // ==================================================
     public function calendario()
     {
@@ -41,7 +35,7 @@ class Tareas extends BaseController
     }
 
     // ==================================================
-    // Vista: asignar tarea (CREAR)
+    // FORM CREAR
     // ==================================================
     public function asignarForm()
     {
@@ -56,19 +50,19 @@ class Tareas extends BaseController
         }
 
         return view('tareas/asignar', [
-            'tarea'            => null, // 👈 IMPORTANTE
-            'divisionUsuario'  => $division,
-            'areasDivision'    => $this->service->getAreasByDivision((int)$division['id_division']),
-            'prioridades'      => $this->service->getPrioridades(),
-            'estados'          => $this->service->getEstadosTarea(),
-            'old'              => session()->getFlashdata('old') ?? [],
-            'error'            => session()->getFlashdata('error'),
-            'success'          => session()->getFlashdata('success'),
+            'tarea'           => null,
+            'divisionUsuario' => $division,
+            'areasDivision'   => $this->service->getAreasByDivision((int)$division['id_division']),
+            'prioridades'     => $this->service->getPrioridades(),
+            'estados'         => $this->service->getEstadosTarea(),
+            'old'             => session()->getFlashdata('old') ?? [],
+            'error'           => session()->getFlashdata('error'),
+            'success'         => session()->getFlashdata('success'),
         ]);
     }
 
     // ==================================================
-    // POST: crear tarea
+    // STORE CREAR
     // ==================================================
     public function asignarStore()
     {
@@ -90,25 +84,28 @@ class Tareas extends BaseController
     }
 
     // ==================================================
-    // Vista: listado para editar / reasignar
+    // GESTIONAR
     // ==================================================
-   public function gestionar()
-{
-    if ($r = $this->requireLogin()) return $r;
+    public function gestionar()
+    {
+        if ($r = $this->requireLogin()) return $r;
 
-    $idUser = (int) session()->get('id_user');
+        $idUser = (int) session()->get('id_user');
 
-    $data = $this->service->getTasksForManagement($idUser);
+        $data = $this->service->getTasksForManagement($idUser);
 
-    return view('tareas/gestionar', [
-        'misTareas'        => $data['misTareas'],
-        'tareasAsignadas' => $data['tareasAsignadas'],
-        'error'            => session()->getFlashdata('error'),
-        'success'          => session()->getFlashdata('success'),
-    ]);
-}
+        return view('tareas/gestionar', [
+            'misTareas'       => $data['misTareas'],
+            'tareasAsignadas' => $data['tareasAsignadas'],
+            'error'           => session()->getFlashdata('error'),
+            'success'         => session()->getFlashdata('success'),
+        ]);
+    }
 
-public function editar(int $idTarea)
+    // ==================================================
+    // EDITAR
+    // ==================================================
+    public function editar(int $idTarea)
 {
     if ($r = $this->requireLogin()) return $r;
 
@@ -128,34 +125,40 @@ public function editar(int $idTarea)
         'areasDivision'   => $this->service->getAreasByDivision((int)$division['id_division']),
         'prioridades'     => $this->service->getPrioridades(),
         'estados'         => $this->service->getEstadosTarea(),
-        'tarea'           => $tarea, 
+        'tarea'           => $tarea, // 🔥 CLAVE
         'old'             => [],
         'error'           => session()->getFlashdata('error'),
         'success'         => session()->getFlashdata('success'),
     ]);
 }
 
-//public function actualizar(int $idTarea)
-//{
-  //  if ($r = $this->requireLogin()) return $r;
-
-    //$result = $this->service->updateTask(
-      //  $idTarea,
-       // $this->request->getPost(),
-       // (int) session('id_user')
-    //);
-
-    //if (!$result['success']) {
-      //  return redirect()->back()->with('error', $result['error']);
-    
-    //  }
-
-    //return redirect()->to('tareas/gestionar')
-      //  ->with('success', 'Tarea actualizada correctamente');
-//}
 
     // ==================================================
-    // API: eventos calendario
+    // ACTUALIZAR / REASIGNAR
+    // ==================================================
+    public function actualizar(int $idTarea)
+    {
+        if ($r = $this->requireLogin()) return $r;
+
+        $result = $this->service->updateTask(
+            $idTarea,
+            $this->request->getPost(),
+            (int) session()->get('id_user'),
+            (int) session()->get('id_area')
+        );
+
+        if (!$result['success']) {
+            return redirect()->back()
+                ->with('error', $result['error'])
+                ->with('old', $this->request->getPost());
+        }
+
+        return redirect()->to(site_url('tareas/gestionar'))
+            ->with('success', 'Tarea actualizada correctamente.');
+    }
+
+    // ==================================================
+    // API: EVENTOS
     // ==================================================
     public function events()
     {
@@ -172,22 +175,19 @@ public function editar(int $idTarea)
     }
 
     // ==================================================
-    // API: usuarios por área
+    // API: USUARIOS POR ÁREA
     // ==================================================
-    public function usersByArea(int $areaId)
-    {
-        if (!session()->get('logged_in')) {
-            return $this->response->setStatusCode(401);
-        }
+  public function usersByArea(int $areaId)
+{
+    return $this->response->setJSON(
+        $this->service->getUsersByArea($areaId)
+    );
+}
 
-        return $this->response->setJSON(
-            $this->service->getUsersByArea($areaId)
-            
-        );
-    }
+
 
     // ==================================================
-    // API: marcar cumplida
+    // API: MARCAR REALIZADA
     // ==================================================
     public function marcarCumplida(int $idTarea)
     {
@@ -205,15 +205,18 @@ public function editar(int $idTarea)
             )
         );
     }
- public function satisfaccion()
-{
-    if ($r = $this->requireLogin()) return $r;
 
-    $idUser = (int) session()->get('id_user');
+    // ==================================================
+    // SATISFACCIÓN
+    // ==================================================
+    public function satisfaccion()
+    {
+        if ($r = $this->requireLogin()) return $r;
 
-    return view('tareas/satisfaccion', [
-        'data' => $this->service->getSatisfaccionActual($idUser),
-    ]);
-}
+        $idUser = (int) session()->get('id_user');
 
+        return view('tareas/satisfaccion', [
+            'data' => $this->service->getSatisfaccionActual($idUser),
+        ]);
+    }
 }

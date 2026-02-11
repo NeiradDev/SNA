@@ -3,19 +3,25 @@
 namespace App\Controllers;
 
 use App\Services\TareaService;
-use App\Models\UsuarioModel;
 
+/**
+ * Controller: Tareas
+ *
+ * ❌ No lógica de negocio
+ * ✅ Orquesta vistas y endpoints
+ */
 class Tareas extends BaseController
 {
     private TareaService $service;
-    private UsuarioModel $usuarioModel;
 
     public function __construct()
     {
         $this->service = new TareaService();
-        $this->usuarioModel = new UsuarioModel();
     }
 
+    // ==================================================
+    // Seguridad básica
+    // ==================================================
     private function requireLogin()
     {
         if (!session()->get('logged_in')) {
@@ -24,111 +30,190 @@ class Tareas extends BaseController
         return null;
     }
 
+    // ==================================================
+    // Vista: calendario
+    // ==================================================
     public function calendario()
     {
         if ($r = $this->requireLogin()) return $r;
 
-        return view('tareas/calendario', [
-            'error'   => session()->getFlashdata('error'),
-            'success' => session()->getFlashdata('success'),
-        ]);
+        return view('tareas/calendario');
     }
 
+    // ==================================================
+    // Vista: asignar tarea (CREAR)
+    // ==================================================
     public function asignarForm()
     {
         if ($r = $this->requireLogin()) return $r;
 
-        $areaAsignador = (int) (session()->get('id_area') ?? 0);
-        $esGerencia = ($areaAsignador === 1);
+        $idUser   = (int) session()->get('id_user');
+        $division = $this->service->getDivisionByUser($idUser);
 
-        // Si es gerencia: ve todas las áreas
-        // Si no: solo su área (para que no elija otras)
-        $areas = $this->usuarioModel->getAreas();
-        if (!$esGerencia) {
-            $areas = array_values(array_filter($areas, fn($a) => (int)$a['id_area'] === $areaAsignador));
+        if (!$division) {
+            return redirect()->back()
+                ->with('error', 'No se pudo determinar la división del usuario.');
         }
 
         return view('tareas/asignar', [
-            'areas'      => $areas,
-            'esGerencia' => $esGerencia,
-            'areaFija'   => $areaAsignador,
-            'error'      => session()->getFlashdata('error'),
-            'success'    => session()->getFlashdata('success'),
-            'old'        => session()->getFlashdata('old') ?? [],
+            'tarea'            => null, // 👈 IMPORTANTE
+            'divisionUsuario'  => $division,
+            'areasDivision'    => $this->service->getAreasByDivision((int)$division['id_division']),
+            'prioridades'      => $this->service->getPrioridades(),
+            'estados'          => $this->service->getEstadosTarea(),
+            'old'              => session()->getFlashdata('old') ?? [],
+            'error'            => session()->getFlashdata('error'),
+            'success'          => session()->getFlashdata('success'),
         ]);
     }
 
+    // ==================================================
+    // POST: crear tarea
+    // ==================================================
     public function asignarStore()
     {
         if ($r = $this->requireLogin()) return $r;
 
-        $post = $this->request->getPost();
+        $post        = $this->request->getPost();
         $asignadoPor = (int) session()->get('id_user');
 
         $result = $this->service->createTaskFromPost($post, $asignadoPor);
 
         if (!$result['success']) {
             return redirect()->to(site_url('tareas/asignar'))
-                ->with('error', $result['error'] ?? 'No se pudo asignar.')
+                ->with('error', $result['error'])
                 ->with('old', $post);
         }
 
-        return redirect()->to(site_url('tareas/asignar'))
+        return redirect()->to(site_url('tareas/gestionar'))
             ->with('success', 'Tarea asignada correctamente.');
     }
 
-    // ===== API =====
+    // ==================================================
+    // Vista: listado para editar / reasignar
+    // ==================================================
+   public function gestionar()
+{
+    if ($r = $this->requireLogin()) return $r;
 
+    $idUser = (int) session()->get('id_user');
+
+    $data = $this->service->getTasksForManagement($idUser);
+
+    return view('tareas/gestionar', [
+        'misTareas'        => $data['misTareas'],
+        'tareasAsignadas' => $data['tareasAsignadas'],
+        'error'            => session()->getFlashdata('error'),
+        'success'          => session()->getFlashdata('success'),
+    ]);
+}
+
+public function editar(int $idTarea)
+{
+    if ($r = $this->requireLogin()) return $r;
+
+    $idUser = (int) session()->get('id_user');
+
+    $tarea = $this->service->getTaskById($idTarea, $idUser);
+
+    if (!$tarea) {
+        return redirect()->to(site_url('tareas/gestionar'))
+            ->with('error', 'Tarea no encontrada o no autorizada.');
+    }
+
+    $division = $this->service->getDivisionByUser($idUser);
+
+    return view('tareas/asignar', [
+        'divisionUsuario' => $division,
+        'areasDivision'   => $this->service->getAreasByDivision((int)$division['id_division']),
+        'prioridades'     => $this->service->getPrioridades(),
+        'estados'         => $this->service->getEstadosTarea(),
+        'tarea'           => $tarea, 
+        'old'             => [],
+        'error'           => session()->getFlashdata('error'),
+        'success'         => session()->getFlashdata('success'),
+    ]);
+}
+
+//public function actualizar(int $idTarea)
+//{
+  //  if ($r = $this->requireLogin()) return $r;
+
+    //$result = $this->service->updateTask(
+      //  $idTarea,
+       // $this->request->getPost(),
+       // (int) session('id_user')
+    //);
+
+    //if (!$result['success']) {
+      //  return redirect()->back()->with('error', $result['error']);
+    
+    //  }
+
+    //return redirect()->to('tareas/gestionar')
+      //  ->with('success', 'Tarea actualizada correctamente');
+//}
+
+    // ==================================================
+    // API: eventos calendario
+    // ==================================================
     public function events()
     {
         if (!session()->get('logged_in')) {
-            return $this->response->setStatusCode(401)->setJSON(['error' => 'No autorizado']);
+            return $this->response->setStatusCode(401);
         }
 
-        $scope = (string)($this->request->getGet('scope') ?? 'mine');
-        if (!in_array($scope, ['mine','assigned'], true)) $scope = 'mine';
-
+        $scope  = $this->request->getGet('scope') ?? 'mine';
         $idUser = (int) session()->get('id_user');
-        $events = $this->service->getCalendarEvents($idUser, $scope);
 
-        return $this->response->setJSON($events);
+        return $this->response->setJSON(
+            $this->service->getCalendarEvents($idUser, $scope)
+        );
     }
 
+    // ==================================================
+    // API: usuarios por área
+    // ==================================================
     public function usersByArea(int $areaId)
     {
         if (!session()->get('logged_in')) {
-            return $this->response->setStatusCode(401)->setJSON(['error' => 'No autorizado']);
+            return $this->response->setStatusCode(401);
         }
 
-        $areaAsignador = (int) (session()->get('id_area') ?? 0);
-        $esGerencia = ($areaAsignador === 1);
-
-        // Si NO es gerencia, forzamos el área a su área (ignoramos la pedida)
-        if (!$esGerencia) {
-            $areaId = $areaAsignador;
-        }
-
-        $users = $this->usuarioModel->getUsersByArea($areaId);
-
-        $out = array_map(function($u) {
-            return [
-                'id_user' => (int)$u['id_user'],
-                'label'   => (string)$u['nombre_completo'] . ' — ' . (string)($u['nombre_cargo'] ?? '')
-            ];
-        }, $users);
-
-        return $this->response->setJSON($out);
+        return $this->response->setJSON(
+            $this->service->getUsersByArea($areaId)
+            
+        );
     }
 
+    // ==================================================
+    // API: marcar cumplida
+    // ==================================================
     public function marcarCumplida(int $idTarea)
     {
         if (!session()->get('logged_in')) {
-            return $this->response->setStatusCode(401)->setJSON(['success' => false, 'error' => 'No autorizado']);
+            return $this->response->setJSON([
+                'success' => false,
+                'error'   => 'No autorizado'
+            ]);
         }
 
-        $idUser = (int) session()->get('id_user');
-        $result = $this->service->markDone($idTarea, $idUser);
-
-        return $this->response->setJSON($result);
+        return $this->response->setJSON(
+            $this->service->markDone(
+                $idTarea,
+                (int) session()->get('id_user')
+            )
+        );
     }
+ public function satisfaccion()
+{
+    if ($r = $this->requireLogin()) return $r;
+
+    $idUser = (int) session()->get('id_user');
+
+    return view('tareas/satisfaccion', [
+        'data' => $this->service->getSatisfaccionActual($idUser),
+    ]);
+}
+
 }

@@ -1,21 +1,34 @@
 <?php
 
+declare(strict_types=1);
+
 namespace App\Controllers;
 
-use App\Services\PlanBatallaService;
 use App\Models\UsuarioModel;
+use App\Services\PlanBatallaService;
+use App\Services\TareaService;
 
 class Reporte extends BaseController
 {
+    // Servicio del plan de batalla (historico)
     private PlanBatallaService $service;
+
+    // Modelo de usuario
     private UsuarioModel $usuarioModel;
+
+    // Servicio de tareas (satisfacción)
+    private TareaService $tareaService;
 
     public function __construct()
     {
-        $this->service = new PlanBatallaService();
-        $this->usuarioModel = new UsuarioModel();
+        $this->service       = new PlanBatallaService();
+        $this->usuarioModel  = new UsuarioModel();
+        $this->tareaService  = new TareaService(); 
     }
 
+    // --------------------------------------------------
+    // Vista Plan de Batalla
+    // --------------------------------------------------
     public function plan()
     {
         if (!session()->get('logged_in')) {
@@ -23,37 +36,44 @@ class Reporte extends BaseController
         }
 
         $idUser = (int) session()->get('id_user');
-        $perfil = $this->usuarioModel->getUserProfileForPlan($idUser);
 
-        if (!$perfil) {
-            return redirect()->to(site_url('home'))
-                ->with('error', 'No se pudo cargar el perfil del usuario.');
-        }
+        // Perfil del usuario
+        $perfil = $this->service->getUserProfile($idUser);
+
+        // ✅ SATISFACCIÓN SEMANAL (EN VIVO)
+        $satisfaccion = $this->tareaService->getSatisfaccionActual($idUser);
 
         return view('reporte/plan', [
-            'perfil'  => $perfil,
-            'error'   => session()->getFlashdata('error'),
-            'success' => session()->getFlashdata('success'),
-            'old'     => session()->getFlashdata('old') ?? [],
+            'perfil'       => $perfil,
+            'satisfaccion' => $satisfaccion, // 👈 se envía a la vista
         ]);
     }
 
+    // --------------------------------------------------
+    // Guardar Plan de Batalla (historico)
+    // --------------------------------------------------
     public function storePlan()
     {
         if (!session()->get('logged_in')) {
             return redirect()->to(site_url('login'));
         }
 
-        $post = $this->request->getPost();
-        $result = $this->service->createFromUserSessionAndPost($post);
+        $idUser = (int) session()->get('id_user');
+        $post   = (array) $this->request->getPost();
 
-        if (!$result['success']) {
-            return redirect()->to(site_url('reporte/plan'))
-                ->with('error', $result['error'] ?? 'No se pudo guardar.')
-                ->with('old', $post);
+        $res = $this->service->savePlanToHistorico($idUser, $post);
+
+        if (!$res['ok']) {
+            return redirect()
+                ->back()
+                ->withInput()
+                ->with('errors', $res['errors'] ?? [
+                    'general' => 'No se pudo guardar el plan.',
+                ]);
         }
 
-        return redirect()->to(site_url('reporte/plan'))
-            ->with('success', 'Plan de Batalla guardado correctamente.');
+        return redirect()
+            ->to(site_url('reporte/plan'))
+            ->with('success', 'Plan guardado correctamente.');
     }
 }

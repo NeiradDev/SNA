@@ -12,7 +12,7 @@ use CodeIgniter\Router\RouteCollection;
 $routes->get('/', 'Auth::login');
 $routes->get('login', 'Auth::login');
 $routes->post('auth/attempt', 'Auth::attempt');
-$routes->post('logout', 'Auth::logout');
+$routes->get('logout', 'Auth::logout');
 
 // ======================================================
 // RUTAS PROTEGIDAS (AUTH)
@@ -34,6 +34,8 @@ $routes->group('', ['filter' => 'auth'], function (RouteCollection $routes) {
 
     $routes->get('reporte/plan', 'Reporte::plan', ['filter' => 'horarioPlan']);
     $routes->post('reporte/plan', 'Reporte::storePlan', ['filter' => 'horarioPlan']);
+
+    $routes->get('reporte/completado', 'Reporte::Completado');
 
     // --------------------------------------------------
     // USUARIOS

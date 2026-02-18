@@ -76,4 +76,12 @@ class Reporte extends BaseController
             ->to(site_url('reporte/plan'))
             ->with('success', 'Plan guardado correctamente.');
     }
+
+    public function Completado()
+    {
+        $modelo = new UsuarioModel();
+        $data['usuarios'] = $modelo->completado();
+
+        return view('reporte/completado', $data);
+    }
 }

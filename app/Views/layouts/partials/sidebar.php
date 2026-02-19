@@ -57,6 +57,7 @@ $menuItems = [
     'sub'   => [
       ['title' => 'Calendario', 'url' => 'tareas/calendario'],
       ['title' => 'Asignar',    'url' => 'tareas/asignar'],
+      ['title' => 'Actividades',    'url' => 'tareas/gestionar'],
     ],
   ],
   [

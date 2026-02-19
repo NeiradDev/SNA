@@ -1,0 +1,251 @@
+@import url('https://fonts.googleapis.com/css2?family=Nunito+Sans:ital,opsz,wght@0,6..12,200..1000;1,6..12,200..1000&display=swap');
+/*Colors*/
+:root {
+  --background-color: white;
+  --text-title-color: #053D4E;
+  --text-color: #32363B;
+  --icon-color: #32363B;
+  --icon-menu-color: #707780;
+  --menu-color: #707780;
+
+  --text-selected-color: #355cc0;
+  --background-selected: #EBF0FF;
+  --background-hover: #f7f9fa;
+  
+  --border-color: #E6e9ed;
+}
+/*Estilos styles*/
+*{
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+  font-family: "Nunito Sans", sans-serif;
+}
+/*Body*/
+body{
+  width: 100%;
+  height: 100vh;
+}
+/*Header*/
+header{
+z-index: 200;
+width: 100%;
+display: flex;
+justify-content: space-between;
+padding: 0.45rem 2rem 0.45rem 1.27rem;
+border-bottom: 1px solid var(--border-color);
+position: fixed;
+background-color: var(--background-color);
+top: 0;
+left: 0;
+}
+/*seccion izq*/
+.left {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 1.4rem;
+}
+/*Menu*/
+.menu-container {
+    height: 100%;
+    display: flex;
+    align-items: center;
+    cursor: pointer;
+}
+
+.menu {
+    width: 1.5rem;
+    height: 37%;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+}
+
+.menu div {
+    width: 100%;
+    height: 0.15rem;
+    background-color: var(--menu-color);
+    transition: all 0.2s ease;
+}
+.menu.menu-toggle div:first-child {
+  width: 40%;
+  transform: rotate(-45deg) translate(-2px, 6px);
+  transform-origin: left center;
+}
+.menu.menu-toggle div:last-child {
+  width: 40%;
+  transform: rotate(45deg) translate(-2px, -6px);
+  transform-origin: left center;
+}
+
+/*Brand*/
+.brand {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 0.2rem;
+}
+
+.brand .logo {
+    width: 6rem;
+}
+
+.brand .name {
+    font-size: 1.5rem;
+    font-weight: 900;
+    color: var(--text-title-color);
+}
+
+/*seccion der*/
+.right {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 1.6rem;
+}
+.right a{
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    border-radius: 0.5rem;
+    transition: background-color 0.2s ease;
+}
+
+.right a:hover{
+    background-color: var(--background-hover);
+}
+.right img {
+  width: 1.5rem;
+  margin: 0.5rem;
+}
+/*SIDEBAR*/
+.sidebar {
+  margin-top: 3.5rem;
+  width: 4rem;
+  height: 100%;
+  position: fixed;
+  top: 0;
+  left: 0;
+  z-index: 100;
+  padding: 1.1rem 0;
+  border-right: 1px solid var(--border-color);
+  overflow-y: auto;
+  background-color: var(--background-color);
+  transition: width 0.5s ease;
+}
+.sidebar.menu-toggle{
+  width: 14rem;
+}
+/* Quita los puntos negros y el espacio extra de Bootstrap */
+.sidebar ul,
+.sidebar ol {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+.sidebar a {
+  display: flex;
+  align-items: center;
+  gap: 1.2rem;
+  padding: 0.9rem 0.7rem;
+  text-decoration: none;
+  margin: 0 0.5rem;
+  border-radius: 0.5rem;
+  white-space: nowrap;
+  overflow: hidden;
+  color: var(--text-color);
+}
+
+.sidebar a:hover {
+  background-color: var(--background-hover);
+}
+.sidebar a.selected{
+  color: var(--text--selected-color);
+  background-color: var(--background-selected);
+}
+
+.sidebar img {
+  width: 1.6rem;
+  min-width: 1.6rem;   /* 🔥 evita que se reduzca */
+  flex-shrink: 0;      /* 🔥 impide que flex lo comprima */
+}
+/*main*/
+main {
+  border: 2px solid red;
+  margin-top: 4rem;
+  margin-left: 4rem;
+  padding: 2rem;
+  transition: margin-left 0.5s ease;
+}
+
+main.menu-toggle {
+  margin-left: 14rem;
+}
+
+/*Responsive*/
+@media (max-width: 500px) {
+  .right.icons-header {
+    display: none;
+  }
+
+  .sidebar {
+    width: 0;
+  }
+  main{
+    margin-left: 0;
+  }
+  main.menu-toggle{
+    margin-left: 0;
+  }
+
+  .menu.menu-toggle div:first-child {
+    width: 100%;
+    transform: rotate(-45deg) translate(-0.2rem, 0.3rem);
+  }
+
+  .menu.menu-toggle div:nth-child(2) {
+    opacity: 0;
+  }
+
+  .menu.menu-toggle div:last-child {
+    width: 100%;
+    transform: rotate(45deg) translate(-0.2rem, -0.3rem);
+  }
+}
+/*Submenus*/
+/* Submenu oculto */
+.sub-menu {
+  max-height: 0;
+  overflow: hidden;
+  transition: max-height 0.3s ease;
+  padding-left: 3rem;
+}
+
+/* Mostrar submenu */
+.has-sub.active .sub-menu {
+  max-height: 500px;
+}
+
+/* Flecha */
+.arrow {
+  margin-left: auto;
+  width: 0;
+  height: 0;
+  border-left: 4px solid transparent;
+  border-right: 4px solid transparent;
+  border-top: 6px solid var(--icon-menu-color);
+  transition: transform 0.3s ease;
+}
+
+.has-sub.active .arrow {
+  transform: rotate(180deg);
+}
+
+/* Estilo sub items */
+.sub-menu li a {
+  font-size: 0.9rem;
+  padding: 0.5rem 0;
+  display: block;
+  color: var(--menu-color);
+}

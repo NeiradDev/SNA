@@ -122,4 +122,48 @@ SQL;
 
     return $this->db->query($sql, [$idUser, $limit])->getResultArray();
 }
+
+}
+class PlanBatallaExtraModel extends Model
+{
+    protected $table = '';
+    protected $allowedFields = ['id_user','semana','descripcion'];
+
+    public function saveCuota(int $idUser, string $semana, string $desc): bool
+    {
+        return (bool) $this->db->query(
+            "INSERT INTO public.cuotas_semana (id_user, semana, descripcion)
+             VALUES (?, ?, ?)
+             ON CONFLICT (id_user, semana)
+             DO UPDATE SET descripcion = EXCLUDED.descripcion",
+            [$idUser, $semana, $desc]
+        );
+    }
+
+    public function saveObjetivo(int $idUser, string $semana, string $desc): bool
+    {
+        return (bool) $this->db->query(
+            "INSERT INTO public.objetivos_semana (id_user, semana, descripcion)
+             VALUES (?, ?, ?)
+             ON CONFLICT (id_user, semana)
+             DO UPDATE SET descripcion = EXCLUDED.descripcion",
+            [$idUser, $semana, $desc]
+        );
+    }
+
+    public function getCuota(int $idUser, string $semana): ?array
+    {
+        return $this->db->query(
+            "SELECT * FROM public.cuotas_semana WHERE id_user = ? AND semana = ?",
+            [$idUser, $semana]
+        )->getRowArray();
+    }
+
+    public function getObjetivo(int $idUser, string $semana): ?array
+    {
+        return $this->db->query(
+            "SELECT * FROM public.objetivos_semana WHERE id_user = ? AND semana = ?",
+            [$idUser, $semana]
+        )->getRowArray();
+    }
 }

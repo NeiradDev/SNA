@@ -69,13 +69,11 @@ if (!function_exists('input_tag')) {
 }
 
 /* ==========================================================
-   ✅ Valores actuales del usuario (para precargar igual que Crear)
-   - old() siempre tiene prioridad
+   Valores actuales del usuario (precarga)
    ========================================================== */
 $userId = (int)($usuario['id_user'] ?? 0);
 
 $val = function(string $key, $default = '') use ($usuario) {
-  // old() tiene prioridad, si no existe usa $usuario
   $old = old($key);
   if ($old !== null) return $old;
   return $usuario[$key] ?? $default;
@@ -86,31 +84,35 @@ $nombresVal   = (string)$val('nombres', '');
 $apellidosVal = (string)$val('apellidos', '');
 $cedulaVal    = (string)$val('cedula', '');
 
-// Relaciones (vienen del JOIN en editar)
+// ✅ Nuevos campos
+$correoVal    = (string)$val('correo', '');
+$telefonoVal  = (string)$val('telefono', '');
+
+// Relaciones
 $idAgenciaVal  = (string)$val('id_agencias', '');
 $idDivisionVal = (string)$val('id_division', '');
 $idAreaVal     = (string)$val('id_area', '');
 $idCargoVal    = (string)$val('id_cargo', '');
 $idSupVal      = (string)$val('id_supervisor', '0');
 
-// Flags (si vienes de old(), se respeta; si no, por defecto false)
+// Flags
 $isDivisionBossVal = old('is_division_boss') ? '1' : '0';
 $isAreaBossVal     = old('is_area_boss') ? '1' : '0';
 
-// Doc type por defecto (si no viene old)
+// Doc type
 $docTypeVal = old('doc_type');
 if ($docTypeVal === null) {
   $docTypeVal = preg_match('/^\d+$/', $cedulaVal) ? 'CEDULA' : 'PASAPORTE';
 }
 
-// Activo (si no viene old, usa usuario)
+// Activo
 $activoOld = old('activo');
 $activoVal = ($activoOld === null) ? !empty($usuario['activo']) : (bool)$activoOld;
 
-// Cargo secundario (si tu editar no lo trae, solo old)
+// Cargo secundario
 $idCargoSecVal = (string)($val('id_cargo_secondary', ''));
 
-// Gerencia (igual que crear)
+// Gerencia
 $gerDefault = (int)(old('id_cargo_gerencia') ?? ($gerenciaCargoIdDefault ?? 6));
 if ($gerDefault <= 0) $gerDefault = 6;
 ?>
@@ -118,7 +120,6 @@ if ($gerDefault <= 0) $gerDefault = 6;
 <form action="<?= base_url('usuarios/actualizar/' . $userId) ?>" method="POST" id="userForm">
   <?= csrf_field() ?>
 
-  <!-- ✅ Hidden real que viaja con el usuario (se llena desde localStorage/UI externa) -->
   <input type="hidden"
          id="id_cargo_gerencia_hidden"
          name="id_cargo_gerencia"
@@ -169,6 +170,32 @@ if ($gerDefault <= 0) $gerDefault = 6;
       <div class="form-text small text-muted" id="doc_help"></div>
     </div>
 
+    <!-- ✅ NUEVO: CORREO -->
+    <div class="col-md-6">
+      <label class="form-label fw-bold small">Correo (opcional)</label>
+      <?= input_tag('correo', 'email', [
+          'maxlength'   => 120,
+          'placeholder' => 'correo@dominio.com',
+          'value'       => $correoVal,
+          'autocomplete'=> 'email',
+      ]) ?>
+      <div class="form-text small text-muted">Si se ingresa, puede validarse como único.</div>
+    </div>
+
+    <!-- ✅ NUEVO: TELÉFONO / CONTACTO -->
+    <div class="col-md-6">
+      <label class="form-label fw-bold small">Teléfono / Contacto (opcional)</label>
+      <?= input_tag('telefono', 'text', [
+          'maxlength'   => 20,
+          'placeholder' => '+593 99 123 4567',
+          'value'       => $telefonoVal,
+          // Solo caracteres comunes de teléfono
+          'pattern'     => '[0-9+()\\s-]{7,20}',
+          'title'       => 'Use números y caracteres válidos: + ( ) espacios y guiones.',
+          'autocomplete'=> 'tel',
+      ]) ?>
+    </div>
+
     <div class="col-md-6">
       <label class="form-label fw-bold small">Contraseña (opcional)</label>
       <input type="password" name="password" class="form-control bg-light border-0" placeholder="Dejar vacío para no cambiar">
@@ -208,7 +235,7 @@ if ($gerDefault <= 0) $gerDefault = 6;
       <div class="form-text small text-muted">Base para cargar áreas y cargos.</div>
     </div>
 
-    <!-- ✅ Área: solo aplica en normal/jefe área/ambos -->
+    <!-- ✅ Área -->
     <div class="col-md-3 d-none" id="wrap_area">
       <label class="form-label fw-bold small">Área</label>
       <select name="id_area" id="id_area" class="form-select bg-light border-0">
@@ -235,7 +262,7 @@ if ($gerDefault <= 0) $gerDefault = 6;
       <div class="form-text small text-muted">El formulario se ajusta sin combobox ilógicos.</div>
     </div>
 
-    <!-- ✅ Cargo principal -->
+    <!-- Cargo principal -->
     <div class="col-md-3" id="wrap_cargo_primary">
       <label class="form-label fw-bold small" id="cargo_primary_label">Cargo (principal)</label>
       <select name="id_cargo" id="id_cargo" class="form-select bg-light border-0" required>
@@ -244,7 +271,7 @@ if ($gerDefault <= 0) $gerDefault = 6;
       <div class="form-text small text-muted" id="cargo_primary_help">Se carga según el rol.</div>
     </div>
 
-    <!-- ✅ Cargo secundario (solo cuando ambos roles) -->
+    <!-- Cargo secundario -->
     <div class="col-md-3 d-none" id="wrap_cargo_secondary">
       <label class="form-label fw-bold small">Cargo (secundario - Área)</label>
       <select name="id_cargo_secondary" id="id_cargo_secondary" class="form-select bg-light border-0">
@@ -253,7 +280,7 @@ if ($gerDefault <= 0) $gerDefault = 6;
       <div class="form-text small text-muted">Obligatorio si es Jefe de División y Jefe de Área.</div>
     </div>
 
-    <!-- Supervisor manual: solo modo normal -->
+    <!-- Supervisor manual -->
     <div class="col-md-3" id="wrap_supervisor">
       <label class="form-label fw-bold small">Supervisor</label>
       <select name="id_supervisor" id="id_supervisor" class="form-select bg-light border-0">
@@ -286,7 +313,7 @@ if ($gerDefault <= 0) $gerDefault = 6;
       </div>
     </div>
 
-    <!-- ✅ Panel de gerencia FUERA del form (independiente) -->
+    <!-- Panel de gerencia (igual) -->
     <div class="card border-0 shadow-sm mt-3">
       <div class="card-body p-3">
         <div class="row g-2 align-items-end">

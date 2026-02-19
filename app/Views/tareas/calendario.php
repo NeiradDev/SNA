@@ -306,7 +306,7 @@ document.getElementById('calendar'),
         marcarComoHecha(info.event.id);
       }
     }else{
-      alert("Solo puedes marcar tareas dentro de la semana actual (JUEVES → MIÉRCOLES).");
+      
     }
   }
 

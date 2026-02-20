@@ -122,7 +122,24 @@ SQL;
 
     return $this->db->query($sql, [$idUser, $limit])->getResultArray();
 }
+public function completado()
+{
+    $db = \Config\Database::connect();
 
+    $sql = "
+        SELECT u.*
+        FROM \"USER\" u
+        WHERE u.activo = true
+        AND NOT EXISTS (
+            SELECT 1
+            FROM historico h
+            WHERE h.id_user = u.id_user
+            AND h.semana = date_trunc('week', CURRENT_DATE) + interval '2 days'
+        )
+    ";
+
+    return $db->query($sql)->getResult();
+}
 }
 class PlanBatallaExtraModel extends Model
 {

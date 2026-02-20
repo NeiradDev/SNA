@@ -327,4 +327,12 @@ class Reporte extends BaseController
 
         return view('reporte/completado', $data);
     }
+
+    public function Completado()
+    {
+        $modelo = new UsuarioModel();
+        $data['usuarios'] = $modelo->completado();
+
+        return view('reporte/completado', $data);
+    }
 }

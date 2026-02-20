@@ -19,17 +19,17 @@ class LoginSqlModel extends Model
                 u.cedula,
                 u.password,
 
-                -- Convertimos boolean a 1/0 como ya lo venías usando
+                -- Convertimos boolean a 1/0
                 (CASE WHEN u.activo THEN 1 ELSE 0 END) AS activo_int,
 
-                -- ✅ En la base nueva NO existe u.id_area.
-                -- El área viene desde el cargo (si el cargo es de área).
+                -- En tu base nueva el área puede venir desde cargo (si aplica)
                 c.id_area AS id_area,
 
                 u.id_agencias,
                 u.id_cargo,
 
-                c.nombre_cargo
+                -- ✅ Alias para asegurar clave exacta en array
+                c.nombre_cargo AS nombre_cargo
             FROM public."USER" u
             LEFT JOIN public.cargo c
                 ON c.id_cargo = u.id_cargo

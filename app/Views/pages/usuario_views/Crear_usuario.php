@@ -108,6 +108,35 @@ if (!function_exists('input_tag')) {
       <div class="form-text small text-muted" id="doc_help"></div>
     </div>
 
+    <!-- ==========================================================
+         ✅ NUEVO: Correo
+         - name="correo" debe existir en DB: public."USER".correo
+         ========================================================== -->
+    <div class="col-md-3">
+      <label class="form-label fw-bold small">Correo</label>
+      <?= input_tag('correo', 'email', [
+        'maxlength'   => 120,
+        'placeholder' => 'Ej. usuario@dominio.com',
+        'autocomplete'=> 'email'
+      ]) ?>
+      <div class="form-text small text-muted">Opcional, pero recomendado.</div>
+    </div>
+
+    <!-- ==========================================================
+         ✅ NUEVO: Teléfono / Contacto
+         - name="telefono" debe existir en DB: public."USER".telefono
+         ========================================================== -->
+    <div class="col-md-3">
+      <label class="form-label fw-bold small">Teléfono / Contacto</label>
+      <?= input_tag('telefono', 'text', [
+        'id'          => 'telefono',
+        'maxlength'   => 20,
+        'placeholder' => 'Ej. +593 99 999 9999',
+        'autocomplete'=> 'tel'
+      ]) ?>
+      <div class="form-text small text-muted">Opcional. Admite +, espacios y guiones.</div>
+    </div>
+
     <div class="col-md-6">
       <label class="form-label fw-bold small">Contraseña</label>
       <input type="password" name="password" class="form-control bg-light border-0" required>
@@ -271,6 +300,17 @@ if (!function_exists('input_tag')) {
   const byId = (id) => document.getElementById(id);
 
   // =========================
+  // ✅ NUEVO: Sanitizar teléfono (solo UI)
+  // - Permite: números, +, espacios y guiones
+  // =========================
+  const phoneInput = byId('telefono');
+  if (phoneInput) {
+    phoneInput.addEventListener('input', () => {
+      phoneInput.value = (phoneInput.value || '').replace(/[^0-9+\-\s]/g, '').slice(0, 20);
+    });
+  }
+
+  // =========================
   // Documento
   // =========================
   const docType   = byId('doc_type');
@@ -296,8 +336,9 @@ if (!function_exists('input_tag')) {
   document.addEventListener('DOMContentLoaded', applyDocRules);
 
   // =========================
-  // Form controls
+  // (Tu JS existente continúa igual)
   // =========================
+
   const form = byId('userForm');
 
   const divisionUI = byId('id_division');
@@ -320,14 +361,10 @@ if (!function_exists('input_tag')) {
   const cargoPrimaryLabel  = byId('cargo_primary_label');
   const cargoPrimaryHelp   = byId('cargo_primary_help');
 
-  // Gerencia UI (FUERA) + hidden (DENTRO)
   const gerenciaCargoUI      = byId('id_cargo_gerencia_ui');
   const gerenciaCargoHidden  = byId('id_cargo_gerencia_hidden');
   const gerenciaUserName     = byId('gerencia_user_name');
 
-  // =========================
-  // URLs internas
-  // =========================
   const URLS = {
     areas:          "<?= base_url('usuarios/api/areas') ?>",
     cargosArea:     "<?= base_url('usuarios/api/cargos') ?>",
@@ -337,11 +374,6 @@ if (!function_exists('input_tag')) {
     divisionBoss:   "<?= base_url('usuarios/api/division-boss') ?>",
   };
 
-  /**
-   * fetchJson()
-   * - Wrapper simple para traer JSON desde endpoints internos.
-   * - Retorna null si falla.
-   */
   const fetchJson = async (url) => {
     try {
       const res = await fetch(url, { headers: { 'Accept': 'application/json' } });
@@ -352,9 +384,6 @@ if (!function_exists('input_tag')) {
     }
   };
 
-  /**
-   * Helpers para selects
-   */
   const resetSelect = (sel, placeholder = 'Seleccione…') => {
     sel.innerHTML = `<option value="">${placeholder}</option>`;
   };
@@ -370,35 +399,18 @@ if (!function_exists('input_tag')) {
     });
   };
 
-  // =========================
-  // ✅ Gerencia (independiente)
-  // - guarda en localStorage
-  // - copia al hidden al enviar
-  // =========================
   const LS_KEY = 'sna_id_cargo_gerencia';
 
-  /**
-   * syncGerenciaHiddenFromUI()
-   * - Copia el valor del input visible (UI) al hidden que viaja con el form.
-   */
   const syncGerenciaHiddenFromUI = () => {
     const val = String(gerenciaCargoUI.value || '6').trim();
     gerenciaCargoHidden.value = val || '6';
   };
 
-  /**
-   * saveGerenciaToLocalStorage()
-   * - Persistimos el cargo de gerencia para futuras sesiones.
-   */
   const saveGerenciaToLocalStorage = () => {
     const val = String(gerenciaCargoUI.value || '6').trim();
     localStorage.setItem(LS_KEY, val || '6');
   };
 
-  /**
-   * loadGerenciaFromLocalStorage()
-   * - Si hay valor guardado, lo carga en UI y sincroniza el hidden.
-   */
   const loadGerenciaFromLocalStorage = () => {
     const saved = localStorage.getItem(LS_KEY);
     if (saved && saved.trim() !== '') {
@@ -407,11 +419,6 @@ if (!function_exists('input_tag')) {
     syncGerenciaHiddenFromUI();
   };
 
-  /**
-   * refreshGerenciaUser()
-   * - Consulta quién es el usuario “Gerencia” según el cargo indicado.
-   * - Rellena el input readonly con el nombre completo.
-   */
   const refreshGerenciaUser = async () => {
     const id = parseInt(gerenciaCargoHidden.value || '6', 10);
     const data = await fetchJson(`${URLS.gerencia}?id_cargo_gerencia=${encodeURIComponent(id)}`);
@@ -423,56 +430,33 @@ if (!function_exists('input_tag')) {
     saveGerenciaToLocalStorage();
     await refreshGerenciaUser();
 
-    // ✅ si es normal, recargamos supervisores porque el fallback de gerencia puede cambiar
     if (!isDivisionBoss.checked && !isAreaBoss.checked) {
       await loadSupervisorsNormal(areaUI.value);
     }
 
-    // ✅ si está mostrando nota de supervisor automático por gerencia, actualiza el texto con el nombre
     if (isDivisionBoss.checked || (isDivisionBoss.checked && isAreaBoss.checked)) {
       setNoteSupervisorGerencia();
     }
   });
 
-  // copia final antes de enviar (por si acaso)
   form.addEventListener('submit', () => {
     syncGerenciaHiddenFromUI();
   });
 
-  // =========================
-  // Utilidades de texto (notas)
-  // =========================
-
-  /**
-   * setNoteSupervisorGerencia()
-   * - Nota de supervisor automático cuando el supervisor es Gerencia.
-   */
   const setNoteSupervisorGerencia = () => {
     const gName = (gerenciaUserName && gerenciaUserName.value && gerenciaUserName.value.trim() !== '')
       ? gerenciaUserName.value.trim()
       : 'No asignado';
-
-    // ✅ Mantiene tu mensaje solicitado (evita auto-supervisión)
     supNoteText.textContent = `Supervisor automático: ${gName} (Gerencia) — evita auto-supervisión.`;
   };
 
-  /**
-   * getDivisionBossName()
-   * - Consulta el jefe de división (nombre) por división.
-   */
   const getDivisionBossName = async (divisionId) => {
     if (!divisionId) return null;
-
     const data = await fetchJson(`${URLS.divisionBoss}?id_division=${encodeURIComponent(divisionId)}`);
-    // Esperado: { ok: bool, boss: { jefe_nombre, id_jf_division, ... } }
     const name = (data && data.ok && data.boss && data.boss.jefe_nombre) ? String(data.boss.jefe_nombre) : '';
     return name.trim() !== '' ? name.trim() : null;
   };
 
-  /**
-   * setNoteSupervisorDivisionBoss()
-   * - Nota de supervisor automático cuando el supervisor es el Jefe de División.
-   */
   const setNoteSupervisorDivisionBoss = async (divisionId) => {
     const bossName = await getDivisionBossName(divisionId);
     supNoteText.textContent = bossName
@@ -480,55 +464,29 @@ if (!function_exists('input_tag')) {
       : 'Supervisor automático: Jefe de División (no asignado).';
   };
 
-  // =========================
-  // Cargas dependientes
-  // =========================
-
-  /**
-   * loadAreasByDivision()
-   * - Carga áreas por división y restaura old('id_area') si existe.
-   */
   const loadAreasByDivision = async (divisionId) => {
     resetSelect(areaUI);
     if (!divisionId) return;
-
     const rows = await fetchJson(`${URLS.areas}?id_division=${encodeURIComponent(divisionId)}`);
     setSelectOptions(areaUI, rows || [], 'id_area', 'nombre_area');
-
     const oldArea = "<?= esc((string) old('id_area')) ?>";
     if (oldArea) areaUI.value = oldArea;
   };
 
-  /**
-   * loadCargosByArea()
-   * - Carga cargos por área en un select destino.
-   */
   const loadCargosByArea = async (areaId, targetSelect) => {
     targetSelect.innerHTML = '<option value="">Cargando…</option>';
     if (!areaId) { resetSelect(targetSelect); return; }
-
     const rows = await fetchJson(`${URLS.cargosArea}?id_area=${encodeURIComponent(areaId)}`);
     setSelectOptions(targetSelect, rows || [], 'id_cargo', 'nombre_cargo');
   };
 
-  /**
-   * loadCargosByDivision()
-   * - Carga cargos por división en un select destino.
-   */
   const loadCargosByDivision = async (divisionId, targetSelect) => {
     targetSelect.innerHTML = '<option value="">Cargando…</option>';
     if (!divisionId) { resetSelect(targetSelect); return; }
-
     const rows = await fetchJson(`${URLS.cargosDivision}?id_division=${encodeURIComponent(divisionId)}`);
     setSelectOptions(targetSelect, rows || [], 'id_cargo', 'nombre_cargo');
   };
 
-  /**
-   * loadSupervisorsNormal()
-   * ✅ CAMBIO CLAVE PEDIDO:
-   * - El endpoint ya devuelve el supervisor preferido (id_jf_area / fallback),
-   * - aquí lo mostramos y lo AUTO-SELECCIONAMOS si existe.
-   */
   const loadSupervisorsNormal = async (areaId) => {
     supUI.innerHTML = '<option value="0">Cargando…</option>';
 
@@ -539,27 +497,22 @@ if (!function_exists('input_tag')) {
 
     const gId = parseInt(gerenciaCargoHidden.value || '6', 10);
 
-    // ✅ En CREAR no hay exclude_id / keep_id, se omiten.
     const rows = await fetchJson(
       `${URLS.sups}?id_area=${encodeURIComponent(areaId)}&id_cargo_gerencia=${encodeURIComponent(gId)}`
     );
 
     const safeRows = Array.isArray(rows) ? rows : [];
 
-    // Siempre dejamos opción “Sin supervisor”
     supUI.innerHTML =
       '<option value="0">Sin supervisor</option>' +
       safeRows.map(i => `<option value="${i.id_user}">${i.supervisor_label}</option>`).join('');
 
-    // 1) Si hay old supervisor -> respeta
     const oldSup = "<?= esc((string) old('id_supervisor')) ?>";
     if (oldSup) {
       supUI.value = oldSup;
       return;
     }
 
-    // 2) Si no hay old y hay candidato preferido -> auto-selección
-    //    (típicamente el jefe del área si existe)
     if (safeRows.length > 0 && safeRows[0].id_user) {
       supUI.value = String(safeRows[0].id_user);
     } else {
@@ -567,10 +520,6 @@ if (!function_exists('input_tag')) {
     }
   };
 
-  // =========================
-  // ✅ Importante:
-  // cuando ocultamos algo, lo limpiamos para que NO viaje y NO valide mal.
-  // =========================
   const clearAreaIfHidden = () => {
     areaUI.value = '';
     resetSelect(areaUI);
@@ -581,15 +530,11 @@ if (!function_exists('input_tag')) {
     resetSelect(cargoSecondary);
   };
 
-  // =========================
-  // Lógica de roles
-  // =========================
   const applyLogicalVisibility = async () => {
     const divId = divisionUI.value;
     const divisionBoss = isDivisionBoss.checked;
     const areaBoss     = isAreaBoss.checked;
 
-    // Sin división: limpia dependientes (evita estados raros)
     if (!divId) {
       wrapArea.classList.add('d-none');
       clearAreaIfHidden();
@@ -603,76 +548,60 @@ if (!function_exists('input_tag')) {
       return;
     }
 
-    // Caso 1: Jefe División solo
     if (divisionBoss && !areaBoss) {
-      // Área no aplica
       wrapArea.classList.add('d-none');
       clearAreaIfHidden();
 
-      // Cargo secundario no aplica
       wrapCargoSecondary.classList.add('d-none');
       clearSecondaryIfHidden();
       cargoSecondary.required = false;
 
-      // Cargo principal por división
       cargoPrimaryLabel.textContent = 'Cargo (principal - División)';
       cargoPrimaryHelp.textContent = 'Se carga por división (jefatura de división).';
       await loadCargosByDivision(divId, cargoPrimary);
 
-      // ✅ Supervisor auto: Gerencia (con nombre)
       wrapSupervisor.classList.add('d-none');
       wrapSupNote.classList.remove('d-none');
       setNoteSupervisorGerencia();
       return;
     }
 
-    // Caso 2: Jefe Área solo
     if (areaBoss && !divisionBoss) {
-      // Área aplica
       wrapArea.classList.remove('d-none');
       await loadAreasByDivision(divId);
 
-      // Secundario no aplica
       wrapCargoSecondary.classList.add('d-none');
       clearSecondaryIfHidden();
       cargoSecondary.required = false;
 
-      // Cargo principal por área
       cargoPrimaryLabel.textContent = 'Cargo (principal - Área)';
       cargoPrimaryHelp.textContent = 'Se carga por área (jefatura de área).';
       await loadCargosByArea(areaUI.value, cargoPrimary);
 
-      // ✅ Supervisor auto: jefe división (con nombre)
       wrapSupervisor.classList.add('d-none');
       wrapSupNote.classList.remove('d-none');
       await setNoteSupervisorDivisionBoss(divId);
       return;
     }
 
-    // Caso 3: Ambos roles
     if (divisionBoss && areaBoss) {
-      // Área aplica
       wrapArea.classList.remove('d-none');
       await loadAreasByDivision(divId);
 
-      // Principal por división
       cargoPrimaryLabel.textContent = 'Cargo (principal - División)';
       cargoPrimaryHelp.textContent = 'Tu cargo principal será el vinculado a la división.';
       await loadCargosByDivision(divId, cargoPrimary);
 
-      // Secundario por área (obligatorio)
       wrapCargoSecondary.classList.remove('d-none');
       cargoSecondary.required = true;
       await loadCargosByArea(areaUI.value, cargoSecondary);
 
-      // ✅ Supervisor auto: Gerencia (con nombre + evita auto-supervisión)
       wrapSupervisor.classList.add('d-none');
       wrapSupNote.classList.remove('d-none');
       setNoteSupervisorGerencia();
       return;
     }
 
-    // Caso 4: Normal
     wrapArea.classList.remove('d-none');
     await loadAreasByDivision(divId);
 
@@ -684,17 +613,12 @@ if (!function_exists('input_tag')) {
     cargoPrimaryHelp.textContent = 'Se carga por área.';
     await loadCargosByArea(areaUI.value, cargoPrimary);
 
-    // ✅ Supervisor visible (normal)
     wrapSupervisor.classList.remove('d-none');
     wrapSupNote.classList.add('d-none');
 
-    // ✅ Cargar supervisor “real” del área y auto-seleccionarlo
     await loadSupervisorsNormal(areaUI.value);
   };
 
-  // =========================
-  // Eventos
-  // =========================
   isDivisionBoss.addEventListener('change', applyLogicalVisibility);
   isAreaBoss.addEventListener('change', applyLogicalVisibility);
   divisionUI.addEventListener('change', applyLogicalVisibility);
@@ -703,41 +627,30 @@ if (!function_exists('input_tag')) {
     const divisionBoss = isDivisionBoss.checked;
     const areaBoss     = isAreaBoss.checked;
 
-    // si no aplica área, no hacer nada
     if (divisionBoss && !areaBoss) return;
 
-    // jefe área o normal => cargo principal por área
     if (!divisionBoss && (areaBoss || (!divisionBoss && !areaBoss))) {
       await loadCargosByArea(areaUI.value, cargoPrimary);
     }
 
-    // ambos roles => cargo secundario por área
     if (divisionBoss && areaBoss) {
       await loadCargosByArea(areaUI.value, cargoSecondary);
     }
 
-    // ✅ supervisor solo normal: recargar y auto-seleccionar jefe real del área
     if (!divisionBoss && !areaBoss) {
       await loadSupervisorsNormal(areaUI.value);
     }
   });
 
-  // =========================
-  // Init
-  // =========================
   document.addEventListener('DOMContentLoaded', async () => {
-    // ✅ carga config de gerencia (independiente)
     loadGerenciaFromLocalStorage();
     await refreshGerenciaUser();
 
-    // restaura división
     const initialDivision = divisionUI.value || "<?= esc((string) old('id_division')) ?>";
     if (initialDivision) divisionUI.value = initialDivision;
 
-    // aplica roles + cargas
     await applyLogicalVisibility();
 
-    // restaura cargos si existen
     const oldCargo = "<?= esc((string) old('id_cargo')) ?>";
     if (oldCargo) cargoPrimary.value = oldCargo;
 
@@ -747,6 +660,5 @@ if (!function_exists('input_tag')) {
 
 })();
 </script>
-
 
 <?= $this->endSection() ?>

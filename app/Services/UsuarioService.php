@@ -9,8 +9,26 @@ use CodeIgniter\Validation\ValidationInterface;
 use CodeIgniter\Database\Exceptions\DatabaseException;
 use CodeIgniter\Database\BaseConnection;
 
+/**
+ * UsuarioService
+ *
+ * ✅ Ajuste solicitado:
+ * - Guardar correo y teléfono del usuario.
+ *
+ * ✅ Qué se hizo:
+ * 1) Se agregan reglas de validación para "correo" y "telefono".
+ * 2) Se normaliza:
+ *    - correo: trim + strtolower
+ *    - telefono: trim + solo números, +, espacios y guiones (y máximo 20)
+ * 3) Se agregan al buildUserData() para que el Model inserte/actualice.
+ * 4) Se mejora el mapeo de errores de BD para detectar duplicado de correo.
+ */
 class UsuarioService
 {
+    /**
+     * ID de cargo usado como fallback para “Gerencia”.
+     * (Tu lógica actual lo usa para resolver supervisor automático).
+     */
     private const DEFAULT_GERENCIA_CARGO_ID = 6;
 
     public function __construct(
@@ -22,22 +40,38 @@ class UsuarioService
     // Listas / Aux
     // -----------------------------
 
+    /**
+     * list()
+     * - Retorna un listado de usuarios con joins (según tu model).
+     */
     public function list(int $limit = 50): array
     {
         return $this->usuarioModel->getUserList($limit);
     }
 
+    /**
+     * getAuxDataForCreate()
+     * - Datos auxiliares para vista crear usuario.
+     */
     public function getAuxDataForCreate(): array
     {
         return $this->auxData();
     }
 
+    /**
+     * getAuxDataForEdit()
+     * - Datos auxiliares para vista editar usuario.
+     * - $userId se conserva por compatibilidad.
+     */
     public function getAuxDataForEdit(int $userId): array
     {
-        // $userId se conserva por compatibilidad (por si luego lo usas).
         return $this->auxData();
     }
 
+    /**
+     * getUser()
+     * - Trae usuario con joins (según tu model).
+     */
     public function getUser(int $id): ?array
     {
         $u = $this->usuarioModel->getUserWithJoinsById($id);
@@ -63,13 +97,17 @@ class UsuarioService
         return $this->usuarioModel->getCargosByDivision($divisionId);
     }
 
+    /**
+     * supervisorsByArea()
+     * - Mantiene tu compatibilidad.
+     * - Si existe getPreferredSupervisorsForArea() lo usa; si no, fallback.
+     */
     public function supervisorsByArea(
         int $areaId,
         int $excludeUserId = 0,
         int $keepUserId = 0,
         int $gerenciaCargoId = 0
     ): array {
-        // Fallback si tu model aún no trae el método nuevo.
         if (!method_exists($this->usuarioModel, 'getPreferredSupervisorsForArea')) {
             return $this->usuarioModel->getSupervisorsByAreaOnly($areaId, $excludeUserId);
         }
@@ -117,35 +155,65 @@ class UsuarioService
     // Core Save (reduce duplicación)
     // =========================================================
 
+    /**
+     * save()
+     * - Core para create/update.
+     * - Mantiene tu orden:
+     *   CREATE:
+     *   1) insertUser
+     *   2) assign boss
+     *   3) resolve supervisor + update puntual
+     *   4) replace cargos
+     *
+     *   UPDATE:
+     *   1) resolve supervisor
+     *   2) updateUser
+     *   3) assign boss
+     *   4) replace cargos
+     */
     private function save(int $id, array $input, bool $isUpdate): array
     {
-        // 1) Validación (rules + doc + duplicado + jefaturas)
+        // ---------------------------------------------------------
+        // 1) Validación total (rules + doc + duplicados + jefaturas)
+        // ---------------------------------------------------------
         $v = $this->validateAll($input, $isUpdate, $id);
         if (!$v['ok']) return $v;
 
+        // Doc ya validado y limpiado
         $docNumber = (string) $v['doc'];
 
-        // 2) Transacción (manejo centralizado)
+        // ---------------------------------------------------------
+        // 2) Transacción centralizada
+        // ---------------------------------------------------------
         return $this->inTransaction(function (BaseConnection $db) use ($id, $input, $isUpdate, $docNumber) {
 
+            // =====================================================
+            // UPDATE
+            // =====================================================
             if ($isUpdate) {
-                // UPDATE: supervisor final se resuelve antes (igual que tu flujo original)
+                // Supervisor final se resuelve ANTES (tu flujo original)
                 $finalSupervisorId = $this->resolveSupervisorId($input, $id);
 
+                // Construye data incluyendo correo/teléfono
                 $data = $this->buildUserData($input, $docNumber, true, $finalSupervisorId);
 
+                // Actualiza usuario
                 if (!$this->usuarioModel->updateUser($id, $data)) {
                     return $this->fail($this->mapDbModelError($this->usuarioModel->getLastDbError()));
                 }
 
-                // Jefaturas + cargos
+                // Asignaciones de jefatura (puede lanzar RuntimeException)
                 $this->applyBossAssignmentsOrFail($input, $id);
+
+                // Reemplazo de cargos (puede lanzar RuntimeException)
                 $this->replaceUserCargosOrFail($input, $id);
 
                 return ['ok' => true];
             }
 
+            // =====================================================
             // CREATE
+            // =====================================================
             $data = $this->buildUserData($input, $docNumber, false, null);
 
             if (!$this->usuarioModel->insertUser($data)) {
@@ -154,7 +222,6 @@ class UsuarioService
 
             $newUserId = (int) $this->usuarioModel->getLastInsertId();
 
-            // Mantengo el orden exacto que tenías:
             // 1) asignar jefaturas
             $this->applyBossAssignmentsOrFail($input, $newUserId);
 
@@ -173,6 +240,7 @@ class UsuarioService
             $this->replaceUserCargosOrFail($input, $newUserId);
 
             return ['ok' => true];
+
         }, $isUpdate ? 'Error al actualizar el usuario.' : 'Error inesperado al registrar el usuario.');
     }
 
@@ -180,6 +248,12 @@ class UsuarioService
     // Transaction wrapper (menos líneas repetidas)
     // =========================================================
 
+    /**
+     * inTransaction()
+     * - Abre transacción, ejecuta $work, commit/rollback.
+     * - Mejora: si hay RuntimeException (por jefaturas/cargos),
+     *   devolvemos el mensaje específico.
+     */
     private function inTransaction(callable $work, string $genericError): array
     {
         $db = db_connect();
@@ -188,7 +262,7 @@ class UsuarioService
         try {
             $res = $work($db);
 
-            // Si el work devolvió ok:false, hacemos rollback aquí.
+            // Si work devolvió ok:false => rollback aquí
             if (!is_array($res) || empty($res['ok'])) {
                 $db->transRollback();
                 return is_array($res) ? $res : $this->fail(['general' => $genericError]);
@@ -196,9 +270,16 @@ class UsuarioService
 
             $db->transCommit();
             return $res;
+
+        } catch (\RuntimeException $e) {
+            // ✅ Mensaje explícito (más útil para UI)
+            $db->transRollback();
+            return $this->fail(['general' => $e->getMessage()]);
+
         } catch (DatabaseException $e) {
             $db->transRollback();
             return $this->fail($this->mapDbException($e));
+
         } catch (\Throwable $e) {
             $db->transRollback();
             return $this->fail(['general' => $genericError]);
@@ -214,14 +295,27 @@ class UsuarioService
     // Validación total (compacta)
     // =========================================================
 
+    /**
+     * validateAll()
+     * - Corre rules del validator
+     * - Valida documento según tipo
+     * - Valida duplicado de documento
+     * - Valida coherencia de jefaturas
+     *
+     * ✅ Nota sobre correo duplicado:
+     * - Si tu model NO tiene métodos "emailExists", confiamos en el índice unique
+     *   y lo capturamos con mapDbException/mapDbModelError.
+     */
     private function validateAll(array $input, bool $isUpdate, int $id): array
     {
+        // 1) Reglas de validator (incluye correo y teléfono)
         [$rules, $messages] = $this->rules($isUpdate);
 
         if (!$this->validator->setRules($rules, $messages)->run($input)) {
             return $this->fail($this->validator->getErrors());
         }
 
+        // 2) Documento
         $docType   = (string) ($input['doc_type'] ?? 'CEDULA');
         $docNumber = trim((string) ($input['cedula'] ?? ''));
 
@@ -229,6 +323,7 @@ class UsuarioService
             return $this->fail($err);
         }
 
+        // 3) Duplicado documento (tu lógica original)
         $dup = $isUpdate
             ? $this->usuarioModel->docExistsForOtherUser($docNumber, $id)
             : $this->usuarioModel->docExists($docNumber);
@@ -237,10 +332,12 @@ class UsuarioService
             return $this->fail(['cedula' => 'El número de documento ya está registrado.']);
         }
 
+        // 4) Validación de jefaturas/cargos coherentes
         if ($err = $this->validateBossSelections($input)) {
             return $this->fail($err);
         }
 
+        // 5) OK
         return ['ok' => true, 'doc' => $docNumber];
     }
 
@@ -248,6 +345,10 @@ class UsuarioService
     // Rules (compacto)
     // =========================================================
 
+    /**
+     * rules()
+     * - Se agregan "correo" y "telefono".
+     */
     private function rules(bool $isUpdate): array
     {
         $rules = [
@@ -257,7 +358,7 @@ class UsuarioService
             'doc_type'    => 'required|in_list[CEDULA,PASAPORTE]',
             'id_agencias' => 'required|is_natural_no_zero',
 
-            'id_cargo'    => 'required|is_natural_no_zero',
+            'id_cargo'      => 'required|is_natural_no_zero',
             'id_supervisor' => 'permit_empty|is_natural',
 
             'is_division_boss' => 'permit_empty',
@@ -266,16 +367,32 @@ class UsuarioService
             'id_division' => 'permit_empty|is_natural_no_zero',
             'id_area'     => 'permit_empty|is_natural_no_zero',
 
-            'id_cargo_gerencia' => 'permit_empty|is_natural_no_zero',
-            'id_cargo_secondary' => 'permit_empty|is_natural_no_zero',
+            'id_cargo_gerencia'   => 'permit_empty|is_natural_no_zero',
+            'id_cargo_secondary'  => 'permit_empty|is_natural_no_zero',
+
+            // ✅ NUEVOS CAMPOS
+            // - correo opcional, pero si viene, debe ser email válido
+            'correo'   => 'permit_empty|valid_email|max_length[120]',
+            // - telefono opcional, longitud máxima 20
+            'telefono' => 'permit_empty|max_length[20]',
         ];
 
+        // Password: obligatorio en create, opcional en update
         $rules['password'] = $isUpdate ? 'permit_empty|min_length[6]' : 'required|min_length[6]';
 
         $messages = [
             'id_division' => ['is_natural_no_zero' => 'Debe seleccionar una división.'],
             'id_area'     => ['is_natural_no_zero' => 'Debe seleccionar un área.'],
             'id_cargo'    => ['required' => 'Debe seleccionar un cargo.'],
+
+            // ✅ Mensajes para los nuevos campos
+            'correo' => [
+                'valid_email' => 'El correo no tiene un formato válido.',
+                'max_length'  => 'El correo no puede superar 120 caracteres.',
+            ],
+            'telefono' => [
+                'max_length'  => 'El teléfono no puede superar 20 caracteres.',
+            ],
         ];
 
         return [$rules, $messages];
@@ -408,36 +525,120 @@ class UsuarioService
     }
 
     // =========================================================
-    // Build data
+    // Build data (✅ ahora incluye correo y teléfono)
     // =========================================================
 
+    /**
+     * buildUserData()
+     * - Crea el array final para insert/update.
+     * - ✅ Se agregan:
+     *   - correo (normalizado)
+     *   - telefono (sanitizado)
+     */
     private function buildUserData(array $input, string $docNumber, bool $isUpdate, ?int $forcedSupervisorId): array
     {
+        // ---------------------------------------------
+        // IDs básicos
+        // ---------------------------------------------
         $agencyId = (int) ($input['id_agencias'] ?? 0);
         $cargoId  = (int) ($input['id_cargo'] ?? 0);
 
+        // ---------------------------------------------
+        // Supervisor final:
+        // - Si forced viene definido, se usa ese.
+        // - Si no, se usa manual (si aplica).
+        // ---------------------------------------------
         $supervisorId = $forcedSupervisorId;
         if ($supervisorId === null) {
             $manual = (int) ($input['id_supervisor'] ?? 0);
             $supervisorId = $manual > 0 ? $manual : null;
         }
 
+        // ---------------------------------------------
+        // ✅ Normalización de correo/teléfono
+        // ---------------------------------------------
+        $email = $this->normalizeEmail((string)($input['correo'] ?? ''));
+        $phone = $this->sanitizePhone((string)($input['telefono'] ?? ''));
+
+        // ---------------------------------------------
+        // Data base (incluye correo y teléfono)
+        // ---------------------------------------------
         $data = [
-            'nombres'       => (string) ($input['nombres'] ?? ''),
-            'apellidos'     => (string) ($input['apellidos'] ?? ''),
+            'nombres'       => trim((string) ($input['nombres'] ?? '')),
+            'apellidos'     => trim((string) ($input['apellidos'] ?? '')),
             'cedula'        => $docNumber,
+
             'id_agencias'   => $agencyId > 0 ? $agencyId : null,
             'id_cargo'      => $cargoId > 0 ? $cargoId : null,
             'id_supervisor' => ($supervisorId && $supervisorId > 0) ? $supervisorId : null,
             'activo'        => !empty($input['activo']),
+
+            // ✅ NUEVOS
+            'correo'        => $email,  // null si viene vacío
+            'telefono'      => $phone,  // null si viene vacío
         ];
 
+        // ---------------------------------------------
+        // Password
+        // - En create siempre se setea.
+        // - En update solo si viene algo.
+        // ---------------------------------------------
         $password = (string) ($input['password'] ?? '');
         if (!$isUpdate || $password !== '') {
             $data['password'] = password_hash($password, PASSWORD_BCRYPT);
         }
 
         return $data;
+    }
+
+    // =========================================================
+    // Helpers de normalización (correo/teléfono)
+    // =========================================================
+
+    /**
+     * normalizeEmail()
+     * - trim
+     * - lowercase
+     * - retorna null si viene vacío
+     */
+    private function normalizeEmail(string $email): ?string
+    {
+        $email = trim($email);
+        if ($email === '') return null;
+
+        // Minúsculas (evita duplicados por mayúsculas)
+        $email = mb_strtolower($email);
+
+        // Respeta límite de tu columna (120)
+        if (strlen($email) > 120) {
+            $email = substr($email, 0, 120);
+        }
+
+        return $email;
+    }
+
+    /**
+     * sanitizePhone()
+     * - trim
+     * - permite solo: números, +, espacios y guiones
+     * - retorna null si viene vacío
+     */
+    private function sanitizePhone(string $phone): ?string
+    {
+        $phone = trim($phone);
+        if ($phone === '') return null;
+
+        // Quita cualquier cosa que NO sea número, +, espacio o guión
+        $phone = preg_replace('/[^0-9+\-\s]/', '', $phone) ?? '';
+
+        $phone = trim($phone);
+
+        // Respeta límite de tu columna (20)
+        if (strlen($phone) > 20) {
+            $phone = substr($phone, 0, 20);
+        }
+
+        return $phone !== '' ? $phone : null;
     }
 
     // =========================================================
@@ -456,24 +657,54 @@ class UsuarioService
     }
 
     // =========================================================
-    // Errores DB
+    // Errores DB (✅ mejora: detectar duplicado por correo)
     // =========================================================
 
+    /**
+     * mapDbException()
+     * - Captura DatabaseException de CI4.
+     * - Si detecta duplicado:
+     *   - Si es de correo => error en "correo"
+     *   - Si es de cedula => error en "cedula"
+     */
     private function mapDbException(DatabaseException $e): array
     {
         $msg = $e->getMessage();
-        if (stripos($msg, 'duplicate key') !== false) {
+
+        // Duplicado
+        if (stripos($msg, 'duplicate key') !== false || stripos($msg, 'unique') !== false) {
+
+            // ✅ Si el mensaje menciona "correo" o el índice "ux_user_correo"
+            if (stripos($msg, 'ux_user_correo') !== false || stripos($msg, 'correo') !== false) {
+                return ['correo' => 'El correo ya está registrado.'];
+            }
+
+            // Por defecto, tu caso clásico: cédula duplicada
             return ['cedula' => 'El número de documento ya está registrado.'];
         }
+
         return ['general' => 'No se pudo registrar el usuario. Intente nuevamente.'];
     }
 
+    /**
+     * mapDbModelError()
+     * - Igual que mapDbException pero usando el error capturado por tu model.
+     */
     private function mapDbModelError(?array $err): array
     {
         $msg = (string) ($err['message'] ?? '');
-        if (stripos($msg, 'duplicate key') !== false) {
+
+        if (stripos($msg, 'duplicate key') !== false || stripos($msg, 'unique') !== false) {
+
+            // ✅ Duplicado correo
+            if (stripos($msg, 'ux_user_correo') !== false || stripos($msg, 'correo') !== false) {
+                return ['correo' => 'El correo ya está registrado.'];
+            }
+
+            // Duplicado documento
             return ['cedula' => 'El número de documento ya está registrado.'];
         }
+
         return ['general' => 'No se pudo completar la operación.'];
     }
 

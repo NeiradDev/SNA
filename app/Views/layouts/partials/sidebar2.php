@@ -5,6 +5,9 @@ $nombres   = (string) session()->get('nombres');
 $apellidos = (string) session()->get('apellidos');
 $nombreCompleto = trim($nombres . ' ' . $apellidos);
 $labelPerfil    = ($logged && $nombreCompleto !== '') ? $nombreCompleto : 'Mi perfil';
+$menuAllowed = $menuAllowed ?? [];
+?>
+
 ?>
 
 

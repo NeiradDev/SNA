@@ -8,11 +8,16 @@ use CodeIgniter\Model;
 
 class UsuarioModel extends Model
 {
+    // =========================================================
     // Config base del model
+    // =========================================================
     protected $table      = 'public."USER"';
     protected $primaryKey = 'id_user';
 
-    // Columnas permitidas para insert/update
+    /**
+     * Columnas permitidas para insert/update
+     * ✅ Ya incluye correo/telefono (correcto)
+     */
     protected $allowedFields = [
         'nombres',
         'apellidos',
@@ -22,11 +27,18 @@ class UsuarioModel extends Model
         'id_agencias',
         'id_cargo',
         'id_supervisor',
+
+        // ✅ Nuevos
+        'correo',
+        'telefono',
+
         'created_at',
         'updated_at',
     ];
 
-    // Nombres de tablas
+    // =========================================================
+    // Nombres de tablas (constantes)
+    // =========================================================
     private const TBL_USER          = 'public."USER"';
     private const TBL_AGENCIA       = 'public.agencias';
     private const TBL_AREA          = 'public.area';
@@ -34,47 +46,71 @@ class UsuarioModel extends Model
     private const TBL_CARGO         = 'public.cargo';
     private const TBL_USUARIO_CARGO = 'public.usuario_cargo';
 
+    // =========================================================
     // Último error de BD y cache simple en memoria
+    // =========================================================
     protected ?array $lastDbError = null;
     private array $memoryCache = [];
 
-    // Ejecuta una consulta y devuelve resultArray
+    // =========================================================
+    // Helpers de consultas
+    // =========================================================
+
+    /**
+     * Ejecuta una consulta y devuelve resultArray
+     */
     private function fetchAll(string $sql, array $params = []): array
     {
         return $this->db->query($sql, $params)->getResultArray();
     }
 
-    // Ejecuta una consulta y devuelve rowArray o null
+    /**
+     * Ejecuta una consulta y devuelve rowArray o null
+     */
     private function fetchRow(string $sql, array $params = []): ?array
     {
         return $this->db->query($sql, $params)->getRowArray() ?: null;
     }
 
-    // Retorna el builder de la tabla USER
+    /**
+     * Retorna el builder de la tabla USER
+     */
     private function userTable()
     {
         return $this->db->table(self::TBL_USER);
     }
 
-    // Guarda el último error detectado
+    /**
+     * Guarda el último error detectado
+     */
     private function setDbError(?array $error): void
     {
         $this->lastDbError = $error;
     }
 
-    // Devuelve el último error de BD
+    /**
+     * Devuelve el último error de BD
+     */
     public function getLastDbError(): ?array
     {
         return $this->lastDbError;
     }
 
-    // Devuelve el último ID insertado
+    /**
+     * Devuelve el último ID insertado
+     */
     public function getLastInsertId(): int
     {
         return (int) $this->db->insertID();
     }
 
-    // Lista áreas con su división para combos/menú
+    // =========================================================
+    // Catálogos / combos
+    // =========================================================
+
+    /**
+     * Lista áreas con su división para combos/menú
+     */
     public function getAreas(): array
     {
         $sql = <<<'SQL'
@@ -91,7 +127,49 @@ SQL;
         return $this->fetchAll($sql);
     }
 
-    // Construye SQL base de usuario con joins reutilizable
+    /**
+     * Cachea resultados de catálogos por key (cache in-memory por request)
+     */
+    private function cachedQuery(string $key, string $sql): array
+    {
+        return $this->memoryCache[$key] ??= $this->fetchAll($sql);
+    }
+
+    /**
+     * Devuelve catálogo de agencias
+     */
+    public function getAgencies(): array
+    {
+        return $this->cachedQuery(
+            'agencies',
+            'SELECT id_agencias, nombre_agencia FROM public.agencias ORDER BY nombre_agencia ASC'
+        );
+    }
+
+    /**
+     * Devuelve catálogo de divisiones
+     */
+    public function getDivision(): array
+    {
+        return $this->cachedQuery(
+            'division',
+            'SELECT id_division, nombre_division FROM public.division ORDER BY nombre_division ASC'
+        );
+    }
+
+    // =========================================================
+    // ✅ SQL base con joins (REUTILIZABLE)
+    // =========================================================
+
+    /**
+     * buildUserWithJoinsSql()
+     * ✅ Ajuste:
+     * - Se agregan u.correo y u.telefono en el SELECT
+     * para que estén disponibles en:
+     * - getUserList()
+     * - getUserProfileForPlan()
+     * - cualquier otro que use este SQL base
+     */
     private function buildUserWithJoinsSql(?string $where = null, ?string $orderBy = null, ?int $limit = null): string
     {
         $sql = <<<'SQL'
@@ -104,6 +182,11 @@ SELECT
     u.id_agencias,
     u.id_cargo,
     u.id_supervisor,
+
+    -- ✅ Nuevos campos
+    u.correo,
+    u.telefono,
+
     ag.nombre_agencia,
     ca.nombre_cargo,
 
@@ -132,31 +215,13 @@ SQL;
         return $sql;
     }
 
-    // Cachea resultados de catálogos por key
-    private function cachedQuery(string $key, string $sql): array
-    {
-        return $this->memoryCache[$key] ??= $this->fetchAll($sql);
-    }
+    // =========================================================
+    // Listados / Perfil
+    // =========================================================
 
-    // Devuelve catálogo de agencias
-    public function getAgencies(): array
-    {
-        return $this->cachedQuery(
-            'agencies',
-            'SELECT id_agencias, nombre_agencia FROM public.agencias ORDER BY nombre_agencia ASC'
-        );
-    }
-
-    // Devuelve catálogo de divisiones
-    public function getDivision(): array
-    {
-        return $this->cachedQuery(
-            'division',
-            'SELECT id_division, nombre_division FROM public.division ORDER BY nombre_division ASC'
-        );
-    }
-
-    // Lista usuarios con joins para vista de listado
+    /**
+     * Lista usuarios con joins para vista de listado
+     */
     public function getUserList(int $limit = 50): array
     {
         return $this->fetchAll(
@@ -164,14 +229,22 @@ SQL;
         );
     }
 
-    // Devuelve perfil completo (con joins) para el usuario logueado
+    /**
+     * Devuelve perfil completo (con joins) para el usuario logueado
+     */
     public function getUserProfileForPlan(int $idUser): ?array
     {
         $sql = $this->buildUserWithJoinsSql('u.id_user = ?', null, 1);
         return $this->fetchRow($sql, [$idUser]);
     }
 
-    // Devuelve el usuario por ID sin joins
+    // =========================================================
+    // Get user por ID
+    // =========================================================
+
+    /**
+     * Devuelve el usuario por ID sin joins
+     */
     public function getUserById(int $id): ?array
     {
         return $this->fetchRow(
@@ -180,7 +253,12 @@ SQL;
         );
     }
 
-    // Devuelve un usuario por ID con joins completos
+    /**
+     * getUserWithJoinsById()
+     * ✅ Ajuste:
+     * - Se agregan u.correo y u.telefono en el SELECT
+     * para que al editar puedas precargar esos campos.
+     */
     public function getUserWithJoinsById(int $id): ?array
     {
         $sql = <<<'SQL'
@@ -193,6 +271,10 @@ SELECT
     u.id_agencias,
     u.id_cargo,
     u.id_supervisor,
+
+    -- ✅ Nuevos campos
+    u.correo,
+    u.telefono,
 
     ag.nombre_agencia,
     ca.nombre_cargo,
@@ -220,21 +302,57 @@ SQL;
         return $this->fetchRow($sql, [$id]);
     }
 
-    // Verifica si existe un documento
+    // =========================================================
+    // Validaciones de duplicados
+    // =========================================================
+
+    /**
+     * Verifica si existe un documento (cedula)
+     */
     public function docExists(string $docNumber): bool
     {
         $row = $this->fetchRow('SELECT 1 FROM public."USER" WHERE cedula = ? LIMIT 1', [$docNumber]);
         return (bool) $row;
     }
 
-    // Verifica documento para evitar duplicado en update
+    /**
+     * Verifica documento para evitar duplicado en update
+     */
     public function docExistsForOtherUser(string $docNumber, int $userId): bool
     {
         $row = $this->fetchRow('SELECT 1 FROM public."USER" WHERE cedula = ? AND id_user <> ? LIMIT 1', [$docNumber, $userId]);
         return (bool) $row;
     }
 
-    // Devuelve áreas filtradas por división
+    /**
+     * ✅ NUEVO: Verifica si existe correo (para create)
+     * - Solo valida cuando correo NO es null/vacío
+     */
+    public function emailExists(string $email): bool
+    {
+        $email = trim($email);
+        if ($email === '') return false;
+
+        $row = $this->fetchRow('SELECT 1 FROM public."USER" WHERE correo = ? LIMIT 1', [$email]);
+        return (bool) $row;
+    }
+
+    /**
+     * ✅ NUEVO: Verifica correo duplicado en update
+     */
+    public function emailExistsForOtherUser(string $email, int $userId): bool
+    {
+        $email = trim($email);
+        if ($email === '') return false;
+
+        $row = $this->fetchRow('SELECT 1 FROM public."USER" WHERE correo = ? AND id_user <> ? LIMIT 1', [$email, $userId]);
+        return (bool) $row;
+    }
+
+    // =========================================================
+    // Cargas dependientes (división/área/cargo)
+    // =========================================================
+
     public function getAreasByDivision(int $divisionId): array
     {
         $sql = <<<'SQL'
@@ -246,7 +364,6 @@ SQL;
         return $this->fetchAll($sql, [$divisionId]);
     }
 
-    // Devuelve cargos filtrados por área
     public function getCargosByArea(int $areaId): array
     {
         $sql = <<<'SQL'
@@ -258,7 +375,6 @@ SQL;
         return $this->fetchAll($sql, [$areaId]);
     }
 
-    // Devuelve cargos filtrados por división
     public function getCargosByDivision(int $divisionId): array
     {
         $sql = <<<'SQL'
@@ -270,7 +386,10 @@ SQL;
         return $this->fetchAll($sql, [$divisionId]);
     }
 
-    // Obtiene el primer usuario activo con un cargo específico
+    // =========================================================
+    // Gerencia / Jefaturas
+    // =========================================================
+
     public function getUserByCargoId(int $cargoId): ?array
     {
         $sql = <<<'SQL'
@@ -287,7 +406,6 @@ SQL;
         return $this->fetchRow($sql, [$cargoId]);
     }
 
-    // Devuelve el jefe de una división (con nombre)
     public function getDivisionBossByDivision(int $divisionId): ?array
     {
         $sql = <<<'SQL'
@@ -304,28 +422,24 @@ SQL;
         return $this->fetchRow($sql, [$divisionId]);
     }
 
-    // Valida si un cargo pertenece a una división
     public function cargoBelongsToDivision(int $cargoId, int $divisionId): bool
     {
         $sql = 'SELECT 1 FROM public.cargo WHERE id_cargo = ? AND id_division = ? LIMIT 1';
         return (bool) $this->fetchRow($sql, [$cargoId, $divisionId]);
     }
 
-    // Valida si un cargo pertenece a un área
     public function cargoBelongsToArea(int $cargoId, int $areaId): bool
     {
         $sql = 'SELECT 1 FROM public.cargo WHERE id_cargo = ? AND id_area = ? LIMIT 1';
         return (bool) $this->fetchRow($sql, [$cargoId, $areaId]);
     }
 
-    // Valida si un área pertenece a una división
     public function areaBelongsToDivision(int $areaId, int $divisionId): bool
     {
         $sql = 'SELECT 1 FROM public.area WHERE id_area = ? AND id_division = ? LIMIT 1';
         return (bool) $this->fetchRow($sql, [$areaId, $divisionId]);
     }
 
-    // Asigna un usuario como jefe de división
     public function assignDivisionBoss(int $divisionId, int $userId): bool
     {
         try {
@@ -341,7 +455,6 @@ SQL;
         }
     }
 
-    // Asigna un usuario como jefe de área
     public function assignAreaBoss(int $areaId, int $userId): bool
     {
         try {
@@ -357,7 +470,10 @@ SQL;
         }
     }
 
-    // Inserta un cargo adicional a un usuario (usuario_cargo)
+    // =========================================================
+    // usuario_cargo
+    // =========================================================
+
     public function insertUserCargo(int $userId, int $cargoId): bool
     {
         if ($userId <= 0 || $cargoId <= 0) return false;
@@ -378,7 +494,6 @@ SQL;
         }
     }
 
-    // Borra todos los cargos asociados a un usuario
     public function deleteUserCargos(int $userId): bool
     {
         try {
@@ -394,7 +509,6 @@ SQL;
         }
     }
 
-    // Reemplaza cargos múltiples del usuario por una lista nueva
     public function replaceUserCargos(int $userId, array $cargoIds): bool
     {
         $cargoIds = array_values(array_unique(array_filter(array_map('intval', $cargoIds), fn($v) => $v > 0)));
@@ -414,7 +528,10 @@ SQL;
         }
     }
 
-    // Inserta un usuario en USER
+    // =========================================================
+    // Insert / Update USER
+    // =========================================================
+
     public function insertUser(array $data): bool
     {
         try {
@@ -427,7 +544,6 @@ SQL;
         }
     }
 
-    // Actualiza un usuario por ID
     public function updateUser(int $id, array $data): bool
     {
         try {
@@ -440,7 +556,10 @@ SQL;
         }
     }
 
-    // Devuelve supervisores preferidos según jefaturas y fallback
+    // =========================================================
+    // Supervisores (tu lógica)
+    // =========================================================
+
     public function getPreferredSupervisorsForArea(
         int $areaId,
         int $excludeUserId = 0,
@@ -533,7 +652,6 @@ SQL;
         return $rows;
     }
 
-    // Devuelve supervisores activos dentro de un área
     public function getSupervisorsByAreaOnly(int $areaId, int $excludeUserId = 0): array
     {
         $sql = <<<'SQL'

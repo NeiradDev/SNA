@@ -16,7 +16,7 @@ class App extends BaseConfig
      *
      * E.g., http://example.com/
      */
-    public string $baseURL = 'http://localhost/SNA/public/';
+    public string $baseURL = 'https://c3a9-186-4-249-54.ngrok-free.app/SNA/public/';
 
     /**
      * Allowed Hostnames in the Site URL other than the hostname in the baseURL.

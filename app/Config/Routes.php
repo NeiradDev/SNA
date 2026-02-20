@@ -24,7 +24,7 @@ $routes->group('', ['filter' => 'auth'], function (RouteCollection $routes) {
     // --------------------------------------------------
     $routes->get('home', 'Home::home');
     $routes->get('perfil', 'Perfil::index');
-
+  
     // --------------------------------------------------
     // HORARIO PLAN / REPORTE
     // --------------------------------------------------
@@ -82,8 +82,11 @@ $routes->group('', ['filter' => 'auth'], function (RouteCollection $routes) {
     // --------------------------------------------------
     $routes->group('tareas', function (RouteCollection $routes) {
 
-        // Vistas
+        // ======================
+        // VISTAS
+        // ======================
         $routes->get('calendario', 'Tareas::calendario');
+
         $routes->get('asignar', 'Tareas::asignarForm');
         $routes->post('asignar', 'Tareas::asignarStore');
 
@@ -92,13 +95,40 @@ $routes->group('', ['filter' => 'auth'], function (RouteCollection $routes) {
         $routes->get('editar/(:num)', 'Tareas::editar/$1');
         $routes->post('actualizar/(:num)', 'Tareas::actualizar/$1');
 
-        // ✅ PORCENTAJE DE SATISFACCIÓN (CORRECTO)
+        // ======================
+        // SATISFACCIÓN
+        // ======================
         $routes->get('satisfaccion', 'Tareas::satisfaccion');
 
-        // APIs internas
+        // ======================
+        // APIs internas (calendario + combos)
+        // ======================
         $routes->get('events', 'Tareas::events'); // ?scope=mine|assigned
         $routes->get('users-by-area/(:num)', 'Tareas::usersByArea/$1');
+
+        // Endpoint antiguo (si aún lo usas en otra vista)
         $routes->post('completar/(:num)', 'Tareas::marcarCumplida/$1');
+
+        // =========================================================
+        // ✅ ESTADO (ALINEADO A TU gestionar.php)
+        // =========================================================
+        // Tu JS hace POST a: /tareas/estado/{id}
+        // Envia: id_estado_tarea = 3|4
+        // Controller: Tareas::estado($id) -> llama a cambiarEstado()
+        $routes->post('estado/(:num)', 'Tareas::estado/$1');
+
+        // =========================================================
+        // ✅ REVISIÓN POR LOTE (ALIAS RECOMENDADO)
+        // =========================================================
+        // POST /tareas/revision-batch
+        // Envia: task_ids[] y action=approve|reject
+        $routes->post('revision-batch', 'Tareas::revisionBatch');
+
+        // =========================================================
+        // ✅ COMPATIBILIDAD (por si tenías endpoints anteriores)
+        // =========================================================
+        $routes->post('cambiar-estado/(:num)', 'Tareas::cambiarEstado/$1');
+        $routes->post('revisar-lote', 'Tareas::revisarLote');
     });
 
     // --------------------------------------------------
@@ -135,5 +165,6 @@ $routes->group('', ['filter' => 'auth'], function (RouteCollection $routes) {
         $routes->get('division/(:num)', 'OrgChart::division/$1');
         $routes->get('api/division/(:num)', 'OrgChart::divisionData/$1');
     });
-
+$routes->get('reporte/completado', 'Reporte::Completado');
+   
 });

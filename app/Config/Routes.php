@@ -35,6 +35,8 @@ $routes->group('', ['filter' => 'auth'], function (RouteCollection $routes) {
     $routes->get('reporte/plan', 'Reporte::plan', ['filter' => 'horarioPlan']);
     $routes->post('reporte/plan', 'Reporte::storePlan', ['filter' => 'horarioPlan']);
 
+    $routes->get('reporte/completado', 'Reporte::Completado');
+
     // --------------------------------------------------
     // USUARIOS
     // --------------------------------------------------

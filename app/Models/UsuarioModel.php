@@ -685,7 +685,7 @@ SQL;
 
         return $this->fetchAll($sql, [$areaId, $excludeUserId, $excludeUserId]);
     }
-    public function completado()
+public function completado()
 {
     $db = \Config\Database::connect();
 
@@ -703,14 +703,4 @@ SQL;
 
     return $db->query($sql)->getResult();
 }
-public function getUserCargos(int $userId): array
-{
-    return $this->db->query("
-        SELECT c.nombre_cargo
-        FROM usuario_cargo uc
-        JOIN cargo c ON c.id_cargo = uc.id_cargo
-        WHERE uc.id_user = ?
-    ", [$userId])->getResultArray();
-}
-
 }

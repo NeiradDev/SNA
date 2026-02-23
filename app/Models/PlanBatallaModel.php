@@ -1,4 +1,4 @@
-<?php
+<?php 
 
 declare(strict_types=1);
 
@@ -34,7 +34,9 @@ class PlanBatallaModel extends Model
         'created_at',
     ];
 
+    // =========================================================
     // Inserta o actualiza el snapshot semanal por (semana, id_user)
+    // =========================================================
     public function upsertHistorico(array $data): bool
     {
         $sql = <<<'SQL'
@@ -80,7 +82,6 @@ ON CONFLICT (semana, id_user) DO UPDATE SET
     satisfaccion   = EXCLUDED.satisfaccion
 SQL;
 
-
         $params = [
             $data['semana'] ?? null,
             $data['estado'] ?? null,
@@ -98,7 +99,7 @@ SQL;
             $data['jefe_inmediato'] ?? '',
             $data['condicion'] ?? '',
             $data['preguntas_json'] ?? '[]',
-            (float) ($data['satisfaccion'] ?? 0)
+            (float) ($data['satisfaccion'] ?? 0),
         ];
 
         try {
@@ -107,9 +108,13 @@ SQL;
             return false;
         }
     }
+
+    // =========================================================
+    // Fallback: últimas semanas de satisfacción del usuario
+    // =========================================================
     public function getUltimasSemanasSatisfaccion(int $idUser, int $limit = 3): array
-{
-    $sql = <<<SQL
+    {
+        $sql = <<<SQL
 SELECT 
     semana,
     satisfaccion
@@ -120,10 +125,134 @@ ORDER BY semana DESC
 LIMIT ?
 SQL;
 
-    return $this->db->query($sql, [$idUser, $limit])->getResultArray();
+        return $this->db->query($sql, [$idUser, $limit])->getResultArray();
+    }
+
+    // =========================================================
+    // NUEVO: Satisfacción semanal del USUARIO por rango
+    // =========================================================
+    public function getSatisfaccionUsuarioPorRango(int $idUser, string $from, string $to): array
+    {
+        $sql = <<<SQL
+SELECT
+    semana,
+    satisfaccion
+FROM public.historico
+WHERE id_user = ?
+  AND semana BETWEEN ? AND ?
+  AND satisfaccion IS NOT NULL
+ORDER BY semana ASC
+SQL;
+
+        return $this->db->query($sql, [$idUser, $from, $to])->getResultArray();
+    }
+
+    // =========================================================
+    // NUEVO: Traer TODAS las divisiones (dropdown gerencia)
+    // =========================================================
+    public function getAllDivisions(): array
+    {
+        $sql = <<<SQL
+SELECT id_division, nombre_division
+FROM public.division
+ORDER BY nombre_division ASC
+SQL;
+
+        return $this->db->query($sql)->getResultArray();
+    }
+
+    // =========================================================
+    // NUEVO: Satisfacción semanal PROMEDIO por DIVISIÓN (rango)
+    // =========================================================
+    public function getSatisfaccionDivisionesPorRango(string $from, string $to): array
+    {
+        $sql = <<<SQL
+SELECT
+    h.id_division,
+    d.nombre_division,
+    h.semana,
+    ROUND(AVG(h.satisfaccion)::numeric, 2) AS satisfaccion_avg
+FROM public.historico h
+JOIN public.division d ON d.id_division = h.id_division
+WHERE h.id_division IS NOT NULL
+  AND h.semana BETWEEN ? AND ?
+  AND h.satisfaccion IS NOT NULL
+GROUP BY h.id_division, d.nombre_division, h.semana
+ORDER BY d.nombre_division ASC, h.semana ASC
+SQL;
+
+        return $this->db->query($sql, [$from, $to])->getResultArray();
+    }
+
+    // =========================================================
+    // ✅ (Se mantiene) Nombre de división del usuario dentro del rango
+    // =========================================================
+    public function getDivisionNameByUserRange(int $idUser, string $from, string $to): string
+    {
+        $sql = <<<SQL
+SELECT d.nombre_division
+FROM public.historico h
+JOIN public.division d ON d.id_division = h.id_division
+WHERE h.id_user = ?
+  AND h.id_division IS NOT NULL
+  AND h.semana BETWEEN ? AND ?
+ORDER BY h.semana DESC
+LIMIT 1
+SQL;
+
+        $row = $this->db->query($sql, [$idUser, $from, $to])->getRowArray();
+        return trim((string)($row['nombre_division'] ?? ''));
+    }
+
+    // =========================================================
+    // ✅ (Se mantiene) Nombre de división del usuario (último histórico)
+    // =========================================================
+    public function getDivisionNameByUserLatest(int $idUser): string
+    {
+        $sql = <<<SQL
+SELECT d.nombre_division
+FROM public.historico h
+JOIN public.division d ON d.id_division = h.id_division
+WHERE h.id_user = ?
+  AND h.id_division IS NOT NULL
+ORDER BY h.semana DESC
+LIMIT 1
+SQL;
+
+        $row = $this->db->query($sql, [$idUser])->getRowArray();
+        return trim((string)($row['nombre_division'] ?? ''));
+    }
+
+    // =========================================================
+    // ✅ NUEVO (EL QUE NECESITAS AHORA):
+    // Match directo con tabla division: id_division -> nombre_division
+    // =========================================================
+    public function getDivisionNameById(int $divisionId): string
+    {
+        // Si no seleccionaron división (0 = Todas), devolvemos vacío
+        if ($divisionId <= 0) {
+            return '';
+        }
+
+        $sql = <<<SQL
+SELECT nombre_division
+FROM public.division
+WHERE id_division = ?
+LIMIT 1
+SQL;
+
+        try {
+            $row = $this->db->query($sql, [$divisionId])->getRowArray();
+            return trim((string)($row['nombre_division'] ?? ''));
+        } catch (\Throwable $e) {
+            return '';
+        }
+    }
 }
 
-}
+// =====================================================================
+// OJO: Esta clase es otra cosa (cuotas/objetivos)
+// =====================================================================
 class PlanBatallaExtraModel extends Model
 {
     protected $table = '';

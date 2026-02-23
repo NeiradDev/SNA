@@ -2152,7 +2152,54 @@ SQL;
             'history_global' => $historyGlobal,
         ];
     }
+public function getSatisfaccionParaPlan(int $idUser): array
+{
+    $resumen = $this->getSatisfaccionResumen($idUser);
 
+    $inicio = (string) ($resumen['inicio'] ?? '');
+    $fin    = (string) ($resumen['fin'] ?? '');
+    $cards  = (array)  ($resumen['cards'] ?? []);
+
+    $division = null;
+    $miArea   = null;
+    $personal = null;
+
+    foreach ($cards as $c) {
+        $scope = (string) ($c['scope'] ?? '');
+
+        if ($scope === 'division' && $division === null) {
+            $division = $c;
+            continue;
+        }
+
+        // 👇 "Mi Área a cargo: X"
+        if ($scope === 'area' && $miArea === null) {
+            $titulo = (string) ($c['titulo'] ?? '');
+            if (stripos($titulo, 'Mi Área a cargo:') === 0) {
+                $miArea = $c;
+                continue;
+            }
+        }
+
+        if ($scope === 'personal' && $personal === null) {
+            $personal = $c;
+            continue;
+        }
+    }
+
+    // ✅ Precedencia: División > Mi Área > Personal
+    $pick = $division ?? $miArea ?? $personal ?? [];
+
+    return [
+        'titulo'        => (string) ($pick['titulo'] ?? 'Mi porcentaje de satisfacción'),
+        'scope'         => (string) ($pick['scope'] ?? 'personal'),
+        'porcentaje'    => (float)  ($pick['porcentaje'] ?? 0),
+        'realizadas'    => (int)    ($pick['realizadas'] ?? 0),
+        'no_realizadas' => (int)    ($pick['no_realizadas'] ?? 0),
+        'inicio'        => $inicio,
+        'fin'           => $fin,
+    ];
+}
     public function getSatisfaccionActual(int $idUser): array
     {
         $resumen = $this->getSatisfaccionResumen($idUser);

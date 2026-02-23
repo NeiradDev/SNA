@@ -151,7 +151,7 @@ class Reporte extends BaseController
         $idUser = (int) session()->get('id_user');
 
         $perfil       = $this->service->getUserProfile($idUser);
-        $satisfaccion = $this->tareaService->getSatisfaccionActual($idUser);
+        $satisfaccion = $this->tareaService->getSatisfaccionParaPlan($idUser);
 
         // 🔒 Verificar si ya completó
         $planCompletado = $this->yaCompletoSemana($idUser);

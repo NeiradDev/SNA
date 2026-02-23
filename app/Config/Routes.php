@@ -24,7 +24,7 @@ $routes->group('', ['filter' => 'auth'], function (RouteCollection $routes) {
     // --------------------------------------------------
     $routes->get('home', 'Home::home');
     $routes->get('perfil', 'Perfil::index');
-  
+    $routes->post('perfil/update-credentials', 'Perfil::updateCredentials');
     // --------------------------------------------------
     // HORARIO PLAN / REPORTE
     // --------------------------------------------------
@@ -163,6 +163,5 @@ $routes->group('', ['filter' => 'auth'], function (RouteCollection $routes) {
         $routes->get('division/(:num)', 'OrgChart::division/$1');
         $routes->get('api/division/(:num)', 'OrgChart::divisionData/$1');
     });
-$routes->get('reporte/completado', 'Reporte::Completado');
-   
+    $routes->get('reporte/completado', 'Reporte::Completado');
 });

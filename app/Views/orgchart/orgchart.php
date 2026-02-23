@@ -53,6 +53,16 @@
   @media (max-width:768px){
     #orgChart{ height:75vh; min-height:480px; }
   }
+
+  .node-link{
+    color: rgba(0,0,0,.80);
+    text-decoration: underline;
+    text-decoration-style: dotted;
+  }
+  .node-link:hover{
+    color: #0B0B0B;
+    text-decoration-style: solid;
+  }
 </style>
 
 <div class="org-wrap">
@@ -62,7 +72,6 @@
         <h1 class="org-title" id="orgTitle">Organigrama</h1>
         <div class="org-sub">Estructura por División</div>
       </div>
-      <!-- ✅ Botón PDF eliminado -->
     </div>
 
     <div class="org-body">
@@ -76,9 +85,12 @@
 
   const dataUrl = <?= json_encode($dataUrl ?? '') ?>;
 
-  const elChart = document.getElementById("orgChart");
-  const elTitle = document.getElementById("orgTitle");
+  // =========================================================
+  // ✅ DATOS DEL USUARIO LOGUEADO (para el mensaje de WhatsApp)
+  // =========================================================
+  const me = <?= json_encode($me ?? ['fullName' => '', 'cargo' => '', 'area' => '']) ?>;
 
+  const elTitle = document.getElementById("orgTitle");
   let chart = null;
 
   const escapeHtml = (v) =>
@@ -86,21 +98,114 @@
       "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"
     }[m]));
 
+  // =========================================================
+  // ✅ Normaliza teléfono para WhatsApp (Ecuador)
+  // - 0XXXXXXXXX => 593XXXXXXXXX
+  // - 593XXXXXXXXX => ok
+  // - XXXXXXXXX (9 dígitos) => 593XXXXXXXXX
+  // =========================================================
+  const normalizeEcuadorPhone = (phoneRaw) => {
+    let digits = String(phoneRaw ?? "").replace(/\D/g, "");
+    if (!digits) return "";
+
+    if (digits.startsWith("0")) {
+      digits = "593" + digits.slice(1);
+    } else if (digits.startsWith("593")) {
+      // ok
+    } else if (digits.length === 9) {
+      digits = "593" + digits;
+    }
+    return digits;
+  };
+
+  // =========================================================
+  // ✅ Mensaje armado con DATOS DEL LOGUEADO (no del nodo)
+  // =========================================================
+  const buildLoggedUserMessage = () => {
+    const nameTxt  = String(me.fullName ?? "").trim();
+    const cargoTxt = String(me.cargo ?? "").trim();
+    const areaTxt  = String(me.area ?? "").trim();
+
+    // Base
+    let msg = nameTxt ? `Hola, soy ${nameTxt}` : "Hola";
+
+    // Cargo y área
+    if (cargoTxt && areaTxt) {
+      msg += `, ${cargoTxt} del área ${areaTxt}`;
+    } else if (cargoTxt) {
+      msg += `, ${cargoTxt}`;
+    } else if (areaTxt) {
+      msg += ` del área ${areaTxt}`;
+    }
+
+    // Cierre
+    msg += `. Me comunico con usted para coordinar una información.`;
+
+    return msg;
+  };
+
+  // =========================================================
+  // ✅ Link WhatsApp con mensaje prellenado del logueado
+  // =========================================================
+  const toWhatsAppLinkLogged = (phoneRaw) => {
+    const digits = normalizeEcuadorPhone(phoneRaw);
+    if (!digits) return "";
+
+    const msg = buildLoggedUserMessage();
+    const encoded = encodeURIComponent(msg);
+
+    return `https://wa.me/${digits}?text=${encoded}`;
+  };
+
   const nodeTemplate = (node) => {
     const d = node.data;
-    const name = escapeHtml(d.fullName);
+
+    const name  = escapeHtml(d.fullName);
     const cargo = d.cargo ? `<div style="font-size:12px;margin-top:3px;color:rgba(0,0,0,.78)">${escapeHtml(d.cargo)}</div>` : "";
     const area  = d.area  ? `<div style="font-size:12px;margin-top:2px;color:rgba(0,0,0,.55)">${escapeHtml(d.area)}</div>` : "";
 
+    // ✅ Correo clickeable (mailto)
+    const email = d.email ? `
+      <div style="font-size:12px;margin-top:6px;color:rgba(0,0,0,.70)">
+        <b>Correo:</b>
+        <a class="node-link" href="mailto:${escapeHtml(d.email)}">${escapeHtml(d.email)}</a>
+      </div>` : "";
+
+    // ✅ Teléfono -> WhatsApp con mensaje del LOGUEADO
+    let phoneHtml = "";
+    if (d.phone) {
+      const phoneText = escapeHtml(d.phone);
+      const wa = toWhatsAppLinkLogged(d.phone);
+
+      phoneHtml = wa
+        ? `
+          <div style="font-size:12px;margin-top:2px;color:rgba(0,0,0,.70)">
+            <b>WhatsApp:</b>
+            <a class="node-link" target="_blank" rel="noopener" href="${wa}">${phoneText}</a>
+          </div>`
+        : `
+          <div style="font-size:12px;margin-top:2px;color:rgba(0,0,0,.70)">
+            <b>Tel:</b> ${phoneText}
+          </div>`;
+    }
+
+    const extra = d.extra ? `
+      <div style="font-size:12px;margin-top:6px;color:rgba(0,0,0,.70)">
+        <b>${escapeHtml(d.extra)}</b>
+      </div>` : "";
+
     return `
       <div style="padding:10px 12px;border-radius:14px;background:#fff;border:1px solid rgba(0,0,0,.18);
-                  box-shadow:0 6px 14px rgba(0,0,0,.10);min-width:270px;">
-        <div style="display:flex;align-items:center;gap:10px;">
-          <div style="width:8px;height:44px;border-radius:999px;background:#E10600;"></div>
-          <div>
+                  box-shadow:0 6px 14px rgba(0,0,0,.10);min-width:310px;">
+        <div style="display:flex;align-items:flex-start;gap:10px;">
+          <div style="width:8px;height:64px;border-radius:999px;background:#E10600;"></div>
+          <div style="flex:1;">
             <div style="font-weight:900;color:#0B0B0B;font-size:14px;line-height:1.1">${name}</div>
             ${cargo}
             ${area}
+            ${email}
+            ${phoneHtml}
+            ${extra}
           </div>
         </div>
       </div>
@@ -117,7 +222,6 @@
     const payload = await fetchJson(dataUrl);
 
     elTitle.textContent = payload.title ?? "Organigrama";
-
     const nodes = payload.nodes ?? [];
 
     chart = new OrgChart()
@@ -125,8 +229,8 @@
       .data(nodes)
       .nodeId(d => d.id)
       .parentNodeId(d => d.parentId)
-      .nodeWidth(() => 290)
-      .nodeHeight(() => 98)
+      .nodeWidth(() => 320)
+      .nodeHeight(() => 140)
       .childrenMargin(() => 45)
       .compactMarginBetween(() => 20)
       .compactMarginPair(() => 40)

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Services;
 
 use App\Models\PlanBatallaModel;
+use App\Services\TareaService;
 use App\Models\UsuarioModel;
 use Config\Database;
 
@@ -23,6 +24,7 @@ class PlanBatallaService
 {
     private PlanBatallaModel $planModel;
     private UsuarioModel $usuarioModel;
+    private TareaService $tareaService;
     private $db;
 
     public function __construct()
@@ -30,6 +32,7 @@ class PlanBatallaService
         $this->planModel    = new PlanBatallaModel();
         $this->usuarioModel = new UsuarioModel();
         $this->db           = Database::connect();
+        $this->tareaService  = new TareaService();
     }
 
     /* =====================================================
@@ -75,17 +78,92 @@ class PlanBatallaService
 
         // 2) Guardar extras semanales (si aplica)
         $this->saveExtrasSemana($idUser, $post);
-
+$this->saveDivisionAndAreasHistoricoIfChiefDivision($idUser, (string) $data['semana']);
         return ['ok' => true];
     }
 
-    /* =====================================================
-       ✅ MIÉRCOLES DE CORTE (FIN DE SEMANA)
-       Semana de negocio: JUEVES → MIÉRCOLES
-       Regla:
-       - Lunes/Martes/Miércoles => el corte es "este miércoles"
-       - Jueves/Viernes/Sábado/Domingo => el corte es "próximo miércoles"
-    ===================================================== */
+    private function saveDivisionAndAreasHistoricoIfChiefDivision(int $idUser, string $semana): void
+{
+    // ---------------------------
+    // 1) ¿Es jefe de división?
+    // ---------------------------
+    $div = $this->db->query(
+        'SELECT id_division FROM public.division WHERE id_jf_division = ? LIMIT 1',
+        [$idUser]
+    )->getRowArray();
+
+    if (empty($div)) {
+        return; // No es jefe de división => no guardamos nada adicional
+    }
+
+    $divisionId = (int) $div['id_division'];
+
+    // ---------------------------
+    // 2) Calcular satisfacción (misma lógica de TareaService)
+    //    - getSatisfaccionResumen() ya arma:
+    //      * card "division" (global)
+    //      * cards "area" para todas las áreas de la división
+    // ---------------------------
+    $resumen = $this->tareaService->getSatisfaccionResumen($idUser);
+    $cards   = (array) ($resumen['cards'] ?? []);
+
+    // 2.1) Sacar card de división
+    $divisionCard = null;
+    foreach ($cards as $c) {
+        if (($c['scope'] ?? '') === 'division' && (int)($c['division_id'] ?? 0) === $divisionId) {
+            $divisionCard = $c;
+            break;
+        }
+    }
+
+    // Si por algún motivo no se pudo calcular, salimos con seguridad
+    if (empty($divisionCard)) {
+        return;
+    }
+
+    $divisionPct = (float) ($divisionCard['porcentaje'] ?? 0);
+
+    // ---------------------------
+    // 3) Guardar historico_division (UPSERT)
+    // ---------------------------
+    $sqlDiv = <<<'SQL'
+INSERT INTO public.historico_division (semana, id_division, satisfaccion, created_at)
+VALUES (?, ?, ?, NOW())
+ON CONFLICT (semana, id_division) DO UPDATE SET
+    satisfaccion = EXCLUDED.satisfaccion
+SQL;
+
+    $this->db->query($sqlDiv, [$semana, $divisionId, $divisionPct]);
+
+    // ---------------------------
+    // 4) Guardar historico_area (todas las áreas de esa división)
+    //    OJO: solo guardamos las cards de áreas que vienen desde la división:
+    //    "Área: X"  (no las de "Mi Área a cargo: X" para evitar duplicados)
+    // ---------------------------
+    $sqlArea = <<<'SQL'
+INSERT INTO public.historico_area (semana, id_area, satisfaccion, created_at)
+VALUES (?, ?, ?, NOW())
+ON CONFLICT (semana, id_area) DO UPDATE SET
+    satisfaccion = EXCLUDED.satisfaccion
+SQL;
+
+    foreach ($cards as $c) {
+        if (($c['scope'] ?? '') !== 'area') continue;
+
+        $titulo = (string) ($c['titulo'] ?? '');
+        if (stripos($titulo, 'Área:') !== 0) {
+            // Evitamos "Mi Área a cargo:" y cualquier otra variante
+            continue;
+        }
+
+        $areaId = (int) ($c['area_id'] ?? 0);
+        if ($areaId <= 0) continue;
+
+        $areaPct = (float) ($c['porcentaje'] ?? 0);
+
+        $this->db->query($sqlArea, [$semana, $areaId, $areaPct]);
+    }
+}
     private function currentWeekStart(): string
     {
         $tz = new \DateTimeZone('America/Guayaquil');

@@ -1,4 +1,4 @@
-<?php
+<?php 
 
 declare(strict_types=1);
 
@@ -34,7 +34,9 @@ class PlanBatallaModel extends Model
         'created_at',
     ];
 
+    // =========================================================
     // Inserta o actualiza el snapshot semanal por (semana, id_user)
+    // =========================================================
     public function upsertHistorico(array $data): bool
     {
         $sql = <<<'SQL'
@@ -80,7 +82,6 @@ ON CONFLICT (semana, id_user) DO UPDATE SET
     satisfaccion   = EXCLUDED.satisfaccion
 SQL;
 
-
         $params = [
             $data['semana'] ?? null,
             $data['estado'] ?? null,
@@ -98,7 +99,7 @@ SQL;
             $data['jefe_inmediato'] ?? '',
             $data['condicion'] ?? '',
             $data['preguntas_json'] ?? '[]',
-            (float) ($data['satisfaccion'] ?? 0)
+            (float) ($data['satisfaccion'] ?? 0),
         ];
 
         try {
@@ -107,9 +108,13 @@ SQL;
             return false;
         }
     }
+
+    // =========================================================
+    // Fallback: últimas semanas de satisfacción del usuario
+    // =========================================================
     public function getUltimasSemanasSatisfaccion(int $idUser, int $limit = 3): array
-{
-    $sql = <<<SQL
+    {
+        $sql = <<<SQL
 SELECT 
     semana,
     satisfaccion

@@ -2,49 +2,18 @@
 <?= $this->section('contenido') ?>
 
 <?php
-/**
- * Vista: tareas/gestionar.php
- *
- * Secciones:
- * - Pendientes de revisión (estado 6) (solo si hay)
- * - Mis tareas
- * - Tareas asignadas por mí (no autoasignadas)
- * - Tareas de mi equipo (solo jefaturas)
- *
- * Nota:
- * - Esta vista usa DataTables en modo “cliente”.
- * - Acciones rápidas:
- *   - Usuario normal (scope=self): NO cierra directo, envía a revisión (estado 6).
- *   - Jefaturas/supervisor/asignador/gerencia: puede cerrar directo (estado 3/4).
- */
-
 $assignScope = $assignScope ?? ['mode' => 'self'];
 $assignMode  = (string)($assignScope['mode'] ?? 'self');
-
-/**
- * Jefaturas pueden ver equipo (super/division/area)
- */
 $canSeeTeam = in_array($assignMode, ['super', 'division', 'area'], true);
 
-/**
- * Estado cerrado si: Realizada(3) / No realizada(4) / Cancelada(5)
- */
 $isClosedState = function(int $estadoId): bool {
   return in_array($estadoId, [3,4,5], true);
 };
 
-/**
- * Estado bloqueado para acciones rápidas:
- * - Cerrados (3/4/5)
- * - En revisión (6) (ya está solicitada)
- */
 $isLockedForActions = function(int $estadoId): bool {
   return in_array($estadoId, [3,4,5,6], true);
 };
 
-/**
- * Clases por estado (filas)
- */
 $rowClassByState = function(int $estadoId): string {
   return match ($estadoId) {
     3 => 'row-finalizada',
@@ -56,6 +25,49 @@ $rowClassByState = function(int $estadoId): string {
 };
 ?>
 
+<style>
+  /* =========================================================
+     ✅ ICONOS: visibles siempre (no dependen de Bootstrap Icons)
+  ========================================================== */
+  .icon-btn{
+    width:18px;
+    height:18px;
+    display:inline-block;
+    vertical-align:middle;
+  }
+  .icon-btn svg{
+    width:18px;
+    height:18px;
+    display:block;
+  }
+  .icon-ok  svg { fill:#198754; }  /* verde bootstrap */
+  .icon-no  svg { fill:#dc3545; }  /* rojo bootstrap */
+  .icon-ed  svg { fill:#0B0B0B; }  /* negro */
+  .icon-lk  svg { fill:#6c757d; }  /* gris */
+
+  /* Para tu SVG externo (report.svg) */
+  .icon-svg{
+    width:18px;
+    height:18px;
+    display:block;
+    filter: contrast(1.2) brightness(.9);
+  }
+
+  /* Colores suaves (no neón) para leer rápido */
+  .row-finalizada { background-color: #e6f4ea !important; } /* verde suave */
+  .row-norealizada{ background-color: #fdecea !important; } /* rojo suave */
+  .row-cancelada  { background-color: #f1f1f1 !important; color: #6c757d; }
+  .row-revision   { background-color: #fff3cd !important; } /* amarillo suave */
+
+  /* Botones DataTables negros */
+  .dt-buttons .btn{
+    background-color:#000 !important;
+    color:#fff !important;
+    border:none !important;
+  }
+  .dt-buttons .btn:hover{ background-color:#222 !important; }
+</style>
+
 <div class="container py-3">
 
   <!-- ================= CABECERA ================= -->
@@ -64,11 +76,23 @@ $rowClassByState = function(int $estadoId): string {
 
     <div class="d-flex gap-2 flex-wrap">
       <a href="<?= site_url('tareas/asignar') ?>" class="btn btn-dark">
-        <i class="bi bi-plus-circle me-1"></i> Nueva Actividad
+        <!-- ✅ SVG PLUS -->
+        <span class="icon-btn me-1">
+          <svg viewBox="0 0 16 16" aria-hidden="true">
+            <path d="M8 1.5a.75.75 0 0 1 .75.75v5h5a.75.75 0 0 1 0 1.5h-5v5a.75.75 0 0 1-1.5 0v-5h-5a.75.75 0 0 1 0-1.5h5v-5A.75.75 0 0 1 8 1.5z"/>
+          </svg>
+        </span>
+        Nueva Actividad
       </a>
 
       <a href="<?= site_url('tareas/calendario') ?>" class="btn btn-outline-dark">
-        <i class="bi bi-calendar3 me-1"></i> Calendario de Actividades
+        <!-- ✅ SVG CALENDAR -->
+        <span class="icon-btn me-1">
+          <svg viewBox="0 0 16 16" aria-hidden="true">
+            <path d="M3.5 0a.5.5 0 0 1 .5.5V1h8V.5a.5.5 0 0 1 1 0V1h.5A1.5 1.5 0 0 1 15 2.5v11A1.5 1.5 0 0 1 13.5 15h-11A1.5 1.5 0 0 1 1 13.5v-11A1.5 1.5 0 0 1 2.5 1H3V.5a.5.5 0 0 1 .5-.5zM2.5 2A.5.5 0 0 0 2 2.5V4h12V2.5a.5.5 0 0 0-.5-.5h-11zM14 5H2v8.5a.5.5 0 0 0 .5.5h11a.5.5 0 0 0 .5-.5V5z"/>
+          </svg>
+        </span>
+        Calendario de Actividades
       </a>
     </div>
   </div>
@@ -95,11 +119,25 @@ $rowClassByState = function(int $estadoId): string {
         </div>
         <div class="col-md-6 d-flex gap-2 flex-wrap">
           <button type="button" id="btnAplicarFiltro" class="btn btn-dark">
-            <i class="bi bi-funnel me-1"></i> Aplicar
+            <!-- ✅ SVG FUNNEL -->
+            <span class="icon-btn me-1">
+              <svg viewBox="0 0 16 16" aria-hidden="true">
+                <path d="M1.5 2a.5.5 0 0 1 .4-.49h12.2a.5.5 0 0 1 .39.81L10 8.5V13a.5.5 0 0 1-.79.41l-2-1.333A.5.5 0 0 1 7 11.667V8.5L1.51 2.32A.5.5 0 0 1 1.5 2z"/>
+              </svg>
+            </span>
+            Aplicar
           </button>
+
           <button type="button" id="btnLimpiarFiltro" class="btn btn-outline-dark">
-            <i class="bi bi-x-circle me-1"></i> Limpiar
+            <!-- ✅ SVG X -->
+            <span class="icon-btn me-1 icon-no">
+              <svg viewBox="0 0 16 16" aria-hidden="true">
+                <path d="M3.72 3.72a.75.75 0 0 1 1.06 0L8 6.94l3.22-3.22a.75.75 0 1 1 1.06 1.06L9.06 8l3.22 3.22a.75.75 0 1 1-1.06 1.06L8 9.06l-3.22 3.22a.75.75 0 0 1-1.06-1.06L6.94 8 3.72 4.78a.75.75 0 0 1 0-1.06z"/>
+              </svg>
+            </span>
+            Limpiar
           </button>
+
           <div class="ms-auto text-muted small">
             Filtro por <b>fecha inicio</b> (cliente).
           </div>
@@ -121,10 +159,21 @@ $rowClassByState = function(int $estadoId): string {
 
         <div class="d-flex gap-2">
           <button type="button" id="btnApproveBatch" class="btn btn-sm btn-outline-light">
-            <i class="bi bi-check2-circle me-1"></i> Aprobar
+            <span class="icon-btn me-1 icon-ok">
+              <svg viewBox="0 0 16 16" aria-hidden="true">
+                <path d="M13.485 1.929a.75.75 0 0 1 .086 1.056l-7.25 9a.75.75 0 0 1-1.097.073l-3.75-3.5a.75.75 0 1 1 1.023-1.096l3.16 2.95 6.74-8.36a.75.75 0 0 1 1.088-.123z"/>
+              </svg>
+            </span>
+            Aprobar
           </button>
+
           <button type="button" id="btnRejectBatch" class="btn btn-sm btn-outline-light">
-            <i class="bi bi-x-circle me-1"></i> Rechazar
+            <span class="icon-btn me-1 icon-no">
+              <svg viewBox="0 0 16 16" aria-hidden="true">
+                <path d="M3.72 3.72a.75.75 0 0 1 1.06 0L8 6.94l3.22-3.22a.75.75 0 1 1 1.06 1.06L9.06 8l3.22 3.22a.75.75 0 1 1-1.06 1.06L8 9.06l-3.22 3.22a.75.75 0 0 1-1.06-1.06L6.94 8 3.72 4.78a.75.75 0 0 1 0-1.06z"/>
+              </svg>
+            </span>
+            Rechazar
           </button>
         </div>
       </div>
@@ -190,8 +239,6 @@ $rowClassByState = function(int $estadoId): string {
   <div class="card shadow-sm mb-4 border-0">
     <div class="card-header bg-dark text-white fw-bold">
       Mis Actividades
-      <div class="small fw-normal opacity-75">
-      </div>
     </div>
 
     <div class="card-body">
@@ -236,7 +283,11 @@ $rowClassByState = function(int $estadoId): string {
                             data-id="<?= (int)$t['id_tarea'] ?>"
                             data-state="3"
                             title="Marcar como realizada">
-                      <i class="bi bi-check2-square"></i>
+                      <span class="icon-btn icon-ok">
+                        <svg viewBox="0 0 16 16" aria-hidden="true">
+                          <path d="M13.485 1.929a.75.75 0 0 1 .086 1.056l-7.25 9a.75.75 0 0 1-1.097.073l-3.75-3.5a.75.75 0 1 1 1.023-1.096l3.16 2.95 6.74-8.36a.75.75 0 0 1 1.088-.123z"/>
+                        </svg>
+                      </span>
                     </button>
 
                     <button type="button"
@@ -244,7 +295,11 @@ $rowClassByState = function(int $estadoId): string {
                             data-id="<?= (int)$t['id_tarea'] ?>"
                             data-state="4"
                             title="Marcar como no realizada">
-                      <i class="bi bi-x-square"></i>
+                      <span class="icon-btn icon-no">
+                        <svg viewBox="0 0 16 16" aria-hidden="true">
+                          <path d="M3.72 3.72a.75.75 0 0 1 1.06 0L8 6.94l3.22-3.22a.75.75 0 1 1 1.06 1.06L9.06 8l3.22 3.22a.75.75 0 1 1-1.06 1.06L8 9.06l-3.22 3.22a.75.75 0 0 1-1.06-1.06L6.94 8 3.72 4.78a.75.75 0 0 1 0-1.06z"/>
+                        </svg>
+                      </span>
                     </button>
                   </div>
                 <?php endif; ?>
@@ -264,13 +319,22 @@ $rowClassByState = function(int $estadoId): string {
               <td class="text-end">
                 <?php if ($closed || $estadoId === 6): ?>
                   <button class="btn btn-sm btn-outline-secondary" disabled title="No editable">
-                    <i class="bi bi-lock"></i>
+                    <span class="icon-btn icon-lk">
+                      <svg viewBox="0 0 16 16" aria-hidden="true">
+                        <path d="M8 1a3 3 0 0 0-3 3v3H4a2 2 0 0 0-2 2v2a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2v-2a2 2 0 0 0-2-2h-1V4a3 3 0 0 0-3-3zm2 6H6V4a2 2 0 1 1 4 0v3z"/>
+                      </svg>
+                    </span>
                   </button>
                 <?php else: ?>
                   <a href="<?= site_url('tareas/editar/' . (int)$t['id_tarea']) ?>"
                      class="btn btn-sm btn-outline-dark"
                      title="Editar">
-                    <i class="bi bi-pencil-square"></i>
+                    <span class="icon-btn icon-ed">
+                      <svg viewBox="0 0 16 16" aria-hidden="true">
+                        <path d="M12.146.854a.5.5 0 0 1 .708 0l2.292 2.292a.5.5 0 0 1 0 .708l-9.5 9.5L3 14l.646-2.646 9.5-9.5zM11.207 2.5 4 9.707V11h1.293L12.5 3.793 11.207 2.5z"/>
+                        <path d="M1 13.5V16h2.5l-.5-2H1.5l-.5-.5z"/>
+                      </svg>
+                    </span>
                   </a>
                 <?php endif; ?>
               </td>
@@ -286,8 +350,6 @@ $rowClassByState = function(int $estadoId): string {
   <div class="card shadow-sm mb-4 border-0">
     <div class="card-header bg-dark text-white fw-bold">
       Actividades asignadas por mí
-      <div class="small fw-normal opacity-75">
-      </div>
     </div>
 
     <div class="card-body">
@@ -328,23 +390,27 @@ $rowClassByState = function(int $estadoId): string {
                   <?php endif; ?>
                 <?php else: ?>
                   <div class="d-flex gap-1">
+                    <!-- ✅ Report.svg pero con tamaño/contraste -->
                     <button type="button"
-        class="btn btn-sm btn-outline-dark action-state"
-        data-id="<?= (int)$t['id_tarea'] ?>"
-        data-state="3">
-
-    <img src="<?= base_url('assets/img/icons/report.svg') ?>"
-         alt="Marcar como hecha"
-         class="icon-svg">
-
-</button>
-
+                            class="btn btn-sm btn-outline-dark action-state"
+                            data-id="<?= (int)$t['id_tarea'] ?>"
+                            data-state="3"
+                            title="Marcar como realizada">
+                      <img src="<?= base_url('assets/img/icons/report.svg') ?>"
+                           alt="Marcar como hecha"
+                           class="icon-svg">
+                    </button>
 
                     <button type="button"
                             class="btn btn-sm btn-outline-dark action-state"
                             data-id="<?= (int)$t['id_tarea'] ?>"
-                            data-state="4">
-                      <i class="bi bi-x-square"></i>
+                            data-state="4"
+                            title="Marcar como no realizada">
+                      <span class="icon-btn icon-no">
+                        <svg viewBox="0 0 16 16" aria-hidden="true">
+                          <path d="M3.72 3.72a.75.75 0 0 1 1.06 0L8 6.94l3.22-3.22a.75.75 0 1 1 1.06 1.06L9.06 8l3.22 3.22a.75.75 0 1 1-1.06 1.06L8 9.06l-3.22 3.22a.75.75 0 0 1-1.06-1.06L6.94 8 3.72 4.78a.75.75 0 0 1 0-1.06z"/>
+                        </svg>
+                      </span>
                     </button>
                   </div>
                 <?php endif; ?>
@@ -364,13 +430,23 @@ $rowClassByState = function(int $estadoId): string {
 
               <td class="text-end">
                 <?php if ($closed || $estadoId === 6): ?>
-                  <button class="btn btn-sm btn-outline-secondary" disabled>
-                    <i class="bi bi-lock"></i>
+                  <button class="btn btn-sm btn-outline-secondary" disabled title="No editable">
+                    <span class="icon-btn icon-lk">
+                      <svg viewBox="0 0 16 16" aria-hidden="true">
+                        <path d="M8 1a3 3 0 0 0-3 3v3H4a2 2 0 0 0-2 2v2a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2v-2a2 2 0 0 0-2-2h-1V4a3 3 0 0 0-3-3zm2 6H6V4a2 2 0 1 1 4 0v3z"/>
+                      </svg>
+                    </span>
                   </button>
                 <?php else: ?>
                   <a href="<?= site_url('tareas/editar/' . (int)$t['id_tarea']) ?>"
-                     class="btn btn-sm btn-outline-dark">
-                    <i class="bi bi-pencil-square"></i>
+                     class="btn btn-sm btn-outline-dark"
+                     title="Editar">
+                    <span class="icon-btn icon-ed">
+                      <svg viewBox="0 0 16 16" aria-hidden="true">
+                        <path d="M12.146.854a.5.5 0 0 1 .708 0l2.292 2.292a.5.5 0 0 1 0 .708l-9.5 9.5L3 14l.646-2.646 9.5-9.5zM11.207 2.5 4 9.707V11h1.293L12.5 3.793 11.207 2.5z"/>
+                        <path d="M1 13.5V16h2.5l-.5-2H1.5l-.5-.5z"/>
+                      </svg>
+                    </span>
                   </a>
                 <?php endif; ?>
               </td>
@@ -434,15 +510,25 @@ $rowClassByState = function(int $estadoId): string {
                     <button type="button"
                             class="btn btn-sm btn-outline-dark action-state"
                             data-id="<?= (int)$t['id_tarea'] ?>"
-                            data-state="3">
-                      <i class="bi bi-check2-square"></i>
+                            data-state="3"
+                            title="Marcar como realizada">
+                      <span class="icon-btn icon-ok">
+                        <svg viewBox="0 0 16 16" aria-hidden="true">
+                          <path d="M13.485 1.929a.75.75 0 0 1 .086 1.056l-7.25 9a.75.75 0 0 1-1.097.073l-3.75-3.5a.75.75 0 1 1 1.023-1.096l3.16 2.95 6.74-8.36a.75.75 0 0 1 1.088-.123z"/>
+                        </svg>
+                      </span>
                     </button>
 
                     <button type="button"
                             class="btn btn-sm btn-outline-dark action-state"
                             data-id="<?= (int)$t['id_tarea'] ?>"
-                            data-state="4">
-                      <i class="bi bi-x-square"></i>
+                            data-state="4"
+                            title="Marcar como no realizada">
+                      <span class="icon-btn icon-no">
+                        <svg viewBox="0 0 16 16" aria-hidden="true">
+                          <path d="M3.72 3.72a.75.75 0 0 1 1.06 0L8 6.94l3.22-3.22a.75.75 0 1 1 1.06 1.06L9.06 8l3.22 3.22a.75.75 0 1 1-1.06 1.06L8 9.06l-3.22 3.22a.75.75 0 0 1-1.06-1.06L6.94 8 3.72 4.78a.75.75 0 0 1 0-1.06z"/>
+                        </svg>
+                      </span>
                     </button>
                   </div>
                 <?php endif; ?>
@@ -463,13 +549,23 @@ $rowClassByState = function(int $estadoId): string {
 
               <td class="text-end">
                 <?php if ($closed || $estadoId === 6): ?>
-                  <button class="btn btn-sm btn-outline-secondary" disabled>
-                    <i class="bi bi-lock"></i>
+                  <button class="btn btn-sm btn-outline-secondary" disabled title="No editable">
+                    <span class="icon-btn icon-lk">
+                      <svg viewBox="0 0 16 16" aria-hidden="true">
+                        <path d="M8 1a3 3 0 0 0-3 3v3H4a2 2 0 0 0-2 2v2a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2v-2a2 2 0 0 0-2-2h-1V4a3 3 0 0 0-3-3zm2 6H6V4a2 2 0 1 1 4 0v3z"/>
+                      </svg>
+                    </span>
                   </button>
                 <?php else: ?>
                   <a href="<?= site_url('tareas/editar/' . (int)$t['id_tarea']) ?>"
-                     class="btn btn-sm btn-outline-dark">
-                    <i class="bi bi-pencil-square"></i>
+                     class="btn btn-sm btn-outline-dark"
+                     title="Editar">
+                    <span class="icon-btn icon-ed">
+                      <svg viewBox="0 0 16 16" aria-hidden="true">
+                        <path d="M12.146.854a.5.5 0 0 1 .708 0l2.292 2.292a.5.5 0 0 1 0 .708l-9.5 9.5L3 14l.646-2.646 9.5-9.5zM11.207 2.5 4 9.707V11h1.293L12.5 3.793 11.207 2.5z"/>
+                        <path d="M1 13.5V16h2.5l-.5-2H1.5l-.5-.5z"/>
+                      </svg>
+                    </span>
                   </a>
                 <?php endif; ?>
               </td>
@@ -483,23 +579,6 @@ $rowClassByState = function(int $estadoId): string {
   <?php endif; ?>
 
 </div>
-
-<!-- ================= ESTILOS (sin neón) ================= -->
-<style>
-/* Colores suaves (no neón) para leer rápido */
-.row-finalizada { background-color: #e6f4ea !important; } /* verde suave */
-.row-norealizada{ background-color: #fdecea !important; } /* rojo suave */
-.row-cancelada  { background-color: #f1f1f1 !important; color: #6c757d; }
-.row-revision   { background-color: #fff3cd !important; } /* amarillo suave */
-
-/* Botones DataTables negros */
-.dt-buttons .btn{
-  background-color:#000 !important;
-  color:#fff !important;
-  border:none !important;
-}
-.dt-buttons .btn:hover{ background-color:#222 !important; }
-</style>
 
 <!-- ================= LIBRERÍAS ================= -->
 <!-- Nota: Si tu layout YA incluye jQuery/DataTables, elimina estas líneas para evitar doble carga -->
@@ -522,16 +601,8 @@ $rowClassByState = function(int $estadoId): string {
 <script>
 $(document).ready(function () {
 
-  // -------------------------------------------------------------
-  // Contexto de alcance (self / area / division / super)
-  // Lo usamos SOLO para mensajes al usuario (confirmaciones).
-  // La autorización real SIEMPRE la valida el backend (Service).
-  // -------------------------------------------------------------
   const assignMode = <?= json_encode($assignMode) ?>;
 
-  // =========================================================
-  // 1) DataTables init (reutilizable)
-  // =========================================================
   function initDataTable(idTabla, columnaOrdenInicio) {
     $(idTabla).DataTable({
       order: [[columnaOrdenInicio, 'desc']],
@@ -551,15 +622,11 @@ $(document).ready(function () {
     });
   }
 
-  // Orden por columna "Inicio"
   initDataTable('#tablaMisTareas', 5);
   initDataTable('#tablaAsignadas', 6);
   if ($('#tablaEquipo').length) initDataTable('#tablaEquipo', 7);
   if ($('#tablaRevision').length) initDataTable('#tablaRevision', 6);
 
-  // =========================================================
-  // 2) Filtro por rango (cliente) usando DataTables ext.search
-  // =========================================================
   const columnMap = {
     tablaMisTareas: 5,
     tablaAsignadas: 6,
@@ -567,17 +634,11 @@ $(document).ready(function () {
     tablaRevision:  6
   };
 
-  /**
-   * Extrae YYYY-mm-dd desde un timestamp (data-order)
-   */
   function parseDateKey(raw) {
     if (!raw) return '';
     return raw.substring(0,10);
   }
 
-  /**
-   * Hook global de DataTables: decide si una fila pasa el filtro
-   */
   $.fn.dataTable.ext.search.push(function(settings, data, dataIndex) {
     const tableId = settings.nTable.getAttribute('id');
     const colIdx  = columnMap[tableId];
@@ -590,7 +651,6 @@ $(document).ready(function () {
     const api   = new $.fn.dataTable.Api(settings);
     const node  = api.row(dataIndex).node();
 
-    // Tomamos el "data-order" de la celda "Inicio"
     const td    = $(node).find('td').eq(colIdx);
     const order = td.attr('data-order') || '';
     const key   = parseDateKey(order);
@@ -618,31 +678,15 @@ $(document).ready(function () {
     if ($('#tablaRevision').length) $('#tablaRevision').DataTable().draw();
   });
 
-  // =========================================================
-  // 3) CSRF (CI4)
-  // =========================================================
   let csrfName = <?= json_encode(csrf_token()) ?>;
   let csrfHash = <?= json_encode(csrf_hash()) ?>;
 
-  // =========================================================
-  // 4) Acciones rápidas: Realizada / No realizada
-  // Endpoint real según tu Routes:
-  // POST tareas/estado/{id}
-  //
-  // IMPORTANTE:
-  // - El backend (según Service) espera el campo "estado" (3/4)
-  // - Aquí enviamos "estado" (y también "id_estado_tarea" por compatibilidad)
-  // =========================================================
   async function postEstado(taskId, estadoId){
     const url = <?= json_encode(site_url('tareas/estado')) ?> + '/' + taskId;
 
     const body = new URLSearchParams();
     body.append(csrfName, csrfHash);
-
-    // ✅ Campo correcto para el backend actual:
     body.append('estado', String(estadoId));
-
-    // ✅ Compatibilidad por si en algún punto leías id_estado_tarea:
     body.append('id_estado_tarea', String(estadoId));
 
     const res = await fetch(url, {
@@ -655,10 +699,7 @@ $(document).ready(function () {
     });
 
     const data = await res.json();
-
-    // Si el backend devuelve csrfHash, lo actualizamos
     if (data && data.csrfHash) csrfHash = data.csrfHash;
-
     return data;
   }
 
@@ -688,7 +729,6 @@ $(document).ready(function () {
       }
 
       if (r.message) alert(r.message);
-
       window.location.reload();
 
     } catch (e) {
@@ -696,16 +736,6 @@ $(document).ready(function () {
     }
   });
 
-  // =========================================================
-  // 5) Revisión masiva (approve / reject)
-  //
-  // Ruta real:
-  // POST tareas/revisar-lote
-  //
-  // Campos esperados por el controller:
-  // - action: approve|reject
-  // - ids[] : lista de id_tarea
-  // =========================================================
   function getSelectedReviewIds(){
     const ids = [];
     $('.chkRevision:checked').each(function(){
@@ -720,8 +750,6 @@ $(document).ready(function () {
     const body = new URLSearchParams();
     body.append(csrfName, csrfHash);
     body.append('action', action);
-
-    // ✅ Nombre correcto: ids[]
     ids.forEach(id => body.append('ids[]', String(id)));
 
     const res = await fetch(url, {
@@ -734,10 +762,7 @@ $(document).ready(function () {
     });
 
     const data = await res.json();
-
-    // Si el backend devuelve csrfHash, lo actualizamos
     if (data && data.csrfHash) csrfHash = data.csrfHash;
-
     return data;
   }
 
@@ -748,24 +773,20 @@ $(document).ready(function () {
   $('#btnApproveBatch').on('click', async function(){
     const ids = getSelectedReviewIds();
     if (!ids.length) return alert('Selecciona tareas para aprobar.');
-
     if (!confirm('¿Aprobar las tareas seleccionadas?')) return;
 
     const r = await postReviewBatch('approve', ids);
     if (!r || !r.success) return alert((r && r.error) ? r.error : 'No se pudo aprobar.');
-
     window.location.reload();
   });
 
   $('#btnRejectBatch').on('click', async function(){
     const ids = getSelectedReviewIds();
     if (!ids.length) return alert('Selecciona tareas para rechazar.');
-
     if (!confirm('¿Rechazar las tareas seleccionadas? (Se marcarán como No realizada)')) return;
 
     const r = await postReviewBatch('reject', ids);
     if (!r || !r.success) return alert((r && r.error) ? r.error : 'No se pudo rechazar.');
-
     window.location.reload();
   });
 

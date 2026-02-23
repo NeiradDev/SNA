@@ -32,7 +32,7 @@ z-index: 200;
 width: 100%;
 display: flex;
 justify-content: space-between;
-padding: 0.45rem 2rem 0.45rem 1.27rem;
+padding: 0.45rem 2rem 0.20rem 1.27rem;
 border-bottom: 1px solid var(--border-color);
 position: fixed;
 background-color: var(--background-color);
@@ -110,6 +110,7 @@ left: 0;
     align-items: center;
     border-radius: 0.5rem;
     transition: background-color 0.2s ease;
+    text-decoration: none;
 }
 
 .right a:hover{
@@ -118,6 +119,13 @@ left: 0;
 .right img {
   width: 1.5rem;
   margin: 0.5rem;
+}
+.text-mini {
+    font-size: 13px;
+    line-height: 1;
+    text-decoration: none;
+    color: var(--text-color);
+    padding: 0;
 }
 /*SIDEBAR*/
 .sidebar {

@@ -14,7 +14,7 @@
 <body>
 
     <div>
-       <?= view('layouts/partials/sidebar2', [
+       <?= view('layouts/partials/sidebar', [
     'menuAllowed' => $menuAllowed ?? []
 ]) ?>
     </div>

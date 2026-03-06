@@ -36,6 +36,7 @@ class Filters extends BaseFilters
         'performance'   => PerformanceMetrics::class,
         'auth'          => \App\Filters\AuthFilter::class,
         'horarioPlan' => \App\Filters\FiltroHorarioPlan::class,
+        'permission'  => \App\Filters\PermissionFilter::class,
         ];
 
     /**

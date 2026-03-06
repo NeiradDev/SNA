@@ -320,13 +320,6 @@ class Reporte extends BaseController
                 'Has completado tu Plan de Batalla semanal correctamente. Se volverá a habilitar el próximo miércoles desde las 00:00 hasta las 23:59.'
             );
     }
-        public function Completado()
-    {
-        $modelo = new UsuarioModel();
-        $data['usuarios'] = $modelo->completado();
-
-        return view('reporte/completado', $data);
-    }
 
     public function Completado()
     {

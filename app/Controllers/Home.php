@@ -106,7 +106,9 @@ class Home extends BaseController
 
             foreach ($allDivisions as $d) {
                 $did = (int) ($d['id_division'] ?? 0);
-                if ($did <= 0) continue;
+                if ($did <= 0) {
+                    continue;
+                }
 
                 $divisionNameMap[$did] = (string) ($d['nombre_division'] ?? '');
             }
@@ -124,15 +126,24 @@ class Home extends BaseController
         // MODO GERENCIA
         // ---------------------------------------------------------
         if ($isGerencia) {
+
+            // ✅ IMPORTANTE:
+            // Esta consulta debe venir desde public.historico_division
+            // y devolver el alias: satisfaccion_div
             $rows = $planModel->getSatisfaccionDivisionesPorRango($from, $to);
 
             $series = [];
             foreach ($rows as $r) {
                 $divId  = (int) ($r['id_division'] ?? 0);
                 $semana = (string) ($r['semana'] ?? '');
-                $val    = (float) ($r['satisfaccion_avg'] ?? 0);
 
-                if ($divId <= 0 || $semana === '') continue;
+                // ✅ AHORA jala de historico_division (alias del Model)
+                // Fallback por compatibilidad si aún existiera "satisfaccion_avg"
+                $val    = (float) ($r['satisfaccion_div'] ?? ($r['satisfaccion_avg'] ?? 0));
+
+                if ($divId <= 0 || $semana === '') {
+                    continue;
+                }
 
                 if (!isset($series[$divId])) {
                     $series[$divId] = ['labels' => [], 'values' => []];
@@ -145,12 +156,14 @@ class Home extends BaseController
             $divisionCards = [];
             foreach ($allDivisions as $d) {
                 $divId = (int) ($d['id_division'] ?? 0);
-                if ($divId <= 0) continue;
+                if ($divId <= 0) {
+                    continue;
+                }
 
                 $divName = (string) ($d['nombre_division'] ?? ('División #' . $divId));
 
-                $labels = $series[$divId]['labels'] ?? [];
-                $values = $series[$divId]['values'] ?? [];
+                $labels     = $series[$divId]['labels'] ?? [];
+                $values     = $series[$divId]['values'] ?? [];
                 $weeksCount = count($values);
 
                 $divisionCards[] = [
@@ -166,22 +179,27 @@ class Home extends BaseController
             }
 
             usort($divisionCards, function ($a, $b) {
-                $aHas = ((int)($a['weeksCount'] ?? 0)) > 0;
-                $bHas = ((int)($b['weeksCount'] ?? 0)) > 0;
+                $aHas = ((int) ($a['weeksCount'] ?? 0)) > 0;
+                $bHas = ((int) ($b['weeksCount'] ?? 0)) > 0;
 
-                if ($aHas !== $bHas) return $aHas ? -1 : 1;
-
-                if ($aHas && $bHas) {
-                    $cmp = ((float)($b['avgWeek'] ?? 0) <=> (float)($a['avgWeek'] ?? 0));
-                    if ($cmp !== 0) return $cmp;
+                if ($aHas !== $bHas) {
+                    return $aHas ? -1 : 1;
                 }
 
-                return strcmp((string)($a['divisionName'] ?? ''), (string)($b['divisionName'] ?? ''));
+                if ($aHas && $bHas) {
+                    $cmp = ((float) ($b['avgWeek'] ?? 0) <=> (float) ($a['avgWeek'] ?? 0));
+                    if ($cmp !== 0) {
+                        return $cmp;
+                    }
+                }
+
+                return strcmp((string) ($a['divisionName'] ?? ''), (string) ($b['divisionName'] ?? ''));
             });
 
+            // Filtrar por división si se seleccionó una (solo gerencia)
             if ($selectedDivisionId > 0) {
                 $divisionCards = array_values(array_filter($divisionCards, function ($c) use ($selectedDivisionId) {
-                    return (int)($c['divisionId'] ?? 0) === $selectedDivisionId;
+                    return (int) ($c['divisionId'] ?? 0) === $selectedDivisionId;
                 }));
             }
 
@@ -196,7 +214,7 @@ class Home extends BaseController
                 'filterTo'             => $to,
 
                 'allDivisions'         => $allDivisions,
-                'divisionNameMap'      => $divisionNameMap, // ✅ NUEVO: para imprimir por match sin historico
+                'divisionNameMap'      => $divisionNameMap, // ✅ para imprimir por match sin historico
 
                 'selectedDivisionId'   => $selectedDivisionId,
                 'selectedDivisionName' => $selectedDivisionName, // ✅ match directo
@@ -217,6 +235,7 @@ class Home extends BaseController
 
         $labels = [];
         $values = [];
+
         foreach ($rows as $r) {
             $labels[] = (string) ($r['semana'] ?? '');
             $values[] = (float) ($r['satisfaccion'] ?? 0);

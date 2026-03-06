@@ -35,8 +35,6 @@ $routes->group('', ['filter' => 'auth'], function (RouteCollection $routes) {
     $routes->get('reporte/plan', 'Reporte::plan', ['filter' => 'horarioPlan']);
     $routes->post('reporte/plan', 'Reporte::storePlan', ['filter' => 'horarioPlan']);
 
-    $routes->get('reporte/completado', 'Reporte::Completado');
-
     // --------------------------------------------------
     // USUARIOS
     // --------------------------------------------------
@@ -123,7 +121,7 @@ $routes->group('', ['filter' => 'auth'], function (RouteCollection $routes) {
         // POST /tareas/revision-batch
         // Envia: task_ids[] y action=approve|reject
         $routes->post('revision-batch', 'Tareas::revisionBatch');
-
+        $routes->post('cancelar/(:num)', 'Tareas::cancelar/$1');
         // =========================================================
         // ✅ COMPATIBILIDAD (por si tenías endpoints anteriores)
         // =========================================================
@@ -166,4 +164,14 @@ $routes->group('', ['filter' => 'auth'], function (RouteCollection $routes) {
         $routes->get('api/division/(:num)', 'OrgChart::divisionData/$1');
     });
     $routes->get('reporte/completado', 'Reporte::Completado');
-});
+    $routes->get('reporte/historico-plan', 'HistoricoPlan::index');
+    $routes->get('reporte/historico-plan/pdf', 'HistoricoPlan::pdf');
+// =========================================================
+// Historial/Auditoría de una tarea (AJAX)
+// =========================================================
+$routes->get('tareas/audit/(:num)', 'Admin\Tareas::audit/$1', ['filter' => 'auth']);
+
+    });
+
+// ✅ Tareas: marcar notificaciones de decisión como vistas
+$routes->post('tareas/decision-seen', 'Tareas::markDecisionSeen');

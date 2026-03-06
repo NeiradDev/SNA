@@ -164,25 +164,39 @@ SQL;
     // =========================================================
     // NUEVO: Satisfacción semanal PROMEDIO por DIVISIÓN (rango)
     // =========================================================
-    public function getSatisfaccionDivisionesPorRango(string $from, string $to): array
-    {
-        $sql = <<<SQL
+   public function getSatisfaccionDivisionesPorRango(string $from, string $to): array
+{
+    /**
+     * =========================================================
+     * getSatisfaccionDivisionesPorRango()
+     * =========================================================
+     * ✅ REQUERIMIENTO:
+     * - Indicadores por División deben salir de public.historico_division
+     * - NO del promedio de usuarios en public.historico
+     *
+     * Tabla fuente esperada:
+     * - public.historico_division (id_division, semana, satisfaccion)
+     *
+     * Nota:
+     * - semana = miércoles de corte (tu regla jueves→miércoles)
+     * =========================================================
+     */
+
+    $sql = <<<SQL
 SELECT
-    h.id_division,
+    hd.id_division,
     d.nombre_division,
-    h.semana,
-    ROUND(AVG(h.satisfaccion)::numeric, 2) AS satisfaccion_avg
-FROM public.historico h
-JOIN public.division d ON d.id_division = h.id_division
-WHERE h.id_division IS NOT NULL
-  AND h.semana BETWEEN ? AND ?
-  AND h.satisfaccion IS NOT NULL
-GROUP BY h.id_division, d.nombre_division, h.semana
-ORDER BY d.nombre_division ASC, h.semana ASC
+    hd.semana,
+    ROUND(COALESCE(hd.satisfaccion, 0)::numeric, 2) AS satisfaccion_div
+FROM public.historico_division hd
+JOIN public.division d ON d.id_division = hd.id_division
+WHERE hd.id_division IS NOT NULL
+  AND hd.semana BETWEEN ? AND ?
+ORDER BY d.nombre_division ASC, hd.semana ASC
 SQL;
 
-        return $this->db->query($sql, [$from, $to])->getResultArray();
-    }
+    return $this->db->query($sql, [$from, $to])->getResultArray();
+}
 
     // =========================================================
     // ✅ (Se mantiene) Nombre de división del usuario dentro del rango

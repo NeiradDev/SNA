@@ -6,29 +6,13 @@ namespace App\Controllers;
 
 use App\Services\TareaService;
 
-/**
- * Controller: Tareas
- *
- * ✅ Objetivo:
- * - Mantener tus pantallas/flujo actual (calendario, asignar, gestionar, editar, actualizar)
- * - Exponer endpoints JSON para FullCalendar, usersByArea y cambios de estado
- * - Implementar el flujo de revisión (estado 6 "En revisión") SIN romper lo existente
- *
- * ⚠️ Importante:
- * - Este controller NO duplica validaciones (eso vive en TareaService)
- * - Mantiene alias /tareas/estado/{id} y /tareas/revision-batch para compatibilidad con tu JS
- */
 class Tareas extends BaseController
 {
     /**
-     * Servicio central de tareas (validaciones, permisos, reglas, batch, revisión, etc.)
+     * Servicio central de tareas
      */
     private TareaService $service;
 
-    /**
-     * Constructor
-     * - Instancia el Service una sola vez por request.
-     */
     public function __construct()
     {
         $this->service = new TareaService();
@@ -37,108 +21,61 @@ class Tareas extends BaseController
     // ==================================================
     // SEGURIDAD
     // ==================================================
-
-    /**
-     * requireLogin()
-     *
-     * ✅ Requiere login para acceder a pantallas (views).
-     * - Si NO está logueado => redirige a /login
-     * - Si está logueado => retorna null (continúa normal)
-     *
-     * @return \CodeIgniter\HTTP\RedirectResponse|null
-     */
     private function requireLogin()
     {
-        // Si no existe flag de sesión de login, bloqueamos acceso
+        // ✅ Si no hay sesión activa, redirige al login
         if (!session()->get('logged_in')) {
-            // Redirección estándar a tu login
             return redirect()->to(site_url('login'));
         }
-
-        // Si está logueado, devolvemos null para seguir flujo normal
         return null;
     }
 
     // ==================================================
     // CALENDARIO
     // ==================================================
-
-    /**
-     * calendario()
-     *
-     * ✅ Muestra la vista del calendario (FullCalendar).
-     */
     public function calendario()
     {
-        // Protección de pantalla (view)
+        // ✅ Seguridad
         if ($r = $this->requireLogin()) {
             return $r;
         }
 
-        // Render de la vista
         return view('tareas/calendario');
     }
 
     // ==================================================
     // FORM CREAR
     // ==================================================
-
-    /**
-     * asignarForm()
-     *
-     * ✅ Formulario para crear/asignar una tarea.
-     * Pasa a la vista:
-     * - división del usuario
-     * - áreas de la división
-     * - catálogos (prioridad/estado)
-     * - assignScope (super/division/area/self) para bloquear/preseleccionar en UI
-     */
     public function asignarForm()
     {
-        // Protección de pantalla (view)
+        // ✅ Seguridad
         if ($r = $this->requireLogin()) {
             return $r;
         }
 
-        // Usuario actual desde sesión
+        // ✅ Usuario logueado
         $idUser = (int) session()->get('id_user');
 
-        // División del usuario (según tu lógica del Model a través del Service)
+        // ✅ Determinar división del usuario (para mostrarla en form)
         $division = $this->service->getDivisionByUser($idUser);
-
-        // Si no podemos determinar división, no podemos cargar combos de áreas
         if (!$division) {
-            return redirect()->back()
-                ->with('error', 'No se pudo determinar la división del usuario.');
+            return redirect()->back()->with('error', 'No se pudo determinar la división del usuario.');
         }
 
-        // ✅ Scope real para UI:
-        // - super (gerencia id_area=1)
-        // - division (jefe división)
-        // - area (jefe área)
-        // - self (normal)
+        // ✅ Scope UI (super/division/area/self)
         $assignScope = $this->service->getAssignScopeForUi(
             (int) session()->get('id_user'),
             (int) session()->get('id_area')
         );
 
-        // Render de la vista de asignación (modo crear: tarea null)
+        // ✅ Render vista
         return view('tareas/asignar', [
-            // null => la vista sabe que es "crear"
             'tarea'           => null,
-
-            // Contexto de división/áreas
             'divisionUsuario' => $division,
             'areasDivision'   => $this->service->getAreasByDivision((int) $division['id_division']),
-
-            // Catálogos
             'prioridades'     => $this->service->getPrioridades(),
             'estados'         => $this->service->getEstadosTarea(),
-
-            // Scope UI
             'assignScope'     => $assignScope,
-
-            // Flashdata para repintar form
             'old'             => session()->getFlashdata('old') ?? [],
             'error'           => session()->getFlashdata('error'),
             'success'         => session()->getFlashdata('success'),
@@ -146,40 +83,31 @@ class Tareas extends BaseController
     }
 
     // ==================================================
-    // STORE CREAR (sin validaciones duplicadas)
+    // STORE CREAR
     // ==================================================
-
-    /**
-     * asignarStore()
-     *
-     * ✅ Guarda una tarea nueva.
-     * - Validación de fechas/permisos/asignados/batch => Service
-     * - Aquí solo se enruta el resultado y se mantiene el comportamiento existente
-     */
     public function asignarStore()
     {
-        // Protección de pantalla (post de vista)
+        // ✅ Seguridad
         if ($r = $this->requireLogin()) {
             return $r;
         }
 
-        // POST completo del formulario
+        // ✅ POST del form
         $post = $this->request->getPost();
 
-        // Usuario que asigna (creador)
+        // ✅ Quien asigna (auditoría)
         $asignadoPor = (int) session()->get('id_user');
 
-        // Crear usando el Service (multi-asignación incluida)
+        // ✅ Crea tarea(s)
         $result = $this->service->createTaskFromPost($post, $asignadoPor);
 
-        // Si el Service devuelve error, volvemos al form con old() + error
+        // ✅ Errores
         if (!($result['success'] ?? false)) {
             return redirect()->to(site_url('tareas/asignar'))
                 ->with('error', (string)($result['error'] ?? 'No se pudo guardar la tarea.'))
                 ->with('old', $post);
         }
 
-        // Ok => redirige a gestionar (como tu flujo actual)
         return redirect()->to(site_url('tareas/gestionar'))
             ->with('success', 'Tarea asignada correctamente.');
     }
@@ -187,202 +115,221 @@ class Tareas extends BaseController
     // ==================================================
     // GESTIONAR
     // ==================================================
-
-    /**
-     * gestionar()
-     *
-     * ✅ Pantalla para ver:
-     * - Mis tareas (asignado_a)
-     * - Tareas asignadas por mí (asignado_por)
-     * - Tareas del equipo (según scope)
-     * - Pendientes de revisión (si existe flujo en DB)
-     */
-    public function gestionar()
-    {
-        // Protección de pantalla (view)
-        if ($r = $this->requireLogin()) {
-            return $r;
-        }
-
-        // Usuario actual
-        $idUser = (int) session()->get('id_user');
-
-        // Área del usuario actual (para scope)
-        $idArea = (int) session()->get('id_area');
-
-        // Todo el armado de datos lo hace el Service
-        $data = $this->service->getTasksForManagement($idUser, $idArea);
-
-        // Render de la vista
-        return view('tareas/gestionar', [
-            'assignScope'        => $data['assignScope'] ?? [],
-            'misTareas'          => $data['misTareas'] ?? [],
-            'tareasAsignadas'    => $data['tareasAsignadas'] ?? [],
-            'tareasEquipo'       => $data['tareasEquipo'] ?? [],
-            'pendientesRevision' => $data['pendientesRevision'] ?? [],
-            'error'              => session()->getFlashdata('error'),
-            'success'            => session()->getFlashdata('success'),
-        ]);
+   public function gestionar()
+{
+    // ✅ Seguridad
+    if ($r = $this->requireLogin()) {
+        return $r;
     }
+
+    $idUser = (int) session()->get('id_user');
+    $idArea = (int) session()->get('id_area');
+
+    // ✅ Trae data agrupada (mis tareas / asignadas / equipo / pendientes revisión)
+    $data = $this->service->getTasksForManagement($idUser, $idArea);
+
+    return view('tareas/gestionar', [
+        'assignScope'        => $data['assignScope'] ?? [],
+        'misTareas'          => $data['misTareas'] ?? [],
+
+        // ✅ NUEVO: Mis tareas diarias (repetidas de HOY)
+        'misDiarias'         => $data['misDiarias'] ?? ['activas'=>[],'revision'=>[],'cerradas'=>[]],
+
+        'tareasAsignadas'    => $data['tareasAsignadas'] ?? [],
+        'tareasEquipo'       => $data['tareasEquipo'] ?? [],
+        'pendientesRevision' => $data['pendientesRevision'] ?? [],
+        'dueAlerts'          => $data['dueAlerts'] ?? [],
+        'expiredUpdated'     => $data['expiredUpdated'] ?? 0,            'decisionNotifications' => $this->service->getDecisionNotifications($idUser),
+
+        'error'              => session()->getFlashdata('error'),
+        'success'            => session()->getFlashdata('success'),
+    ]);
+}
 
     // ==================================================
     // EDITAR
     // ==================================================
-
-    /**
-     * editar($idTarea)
-     *
-     * ✅ Carga el formulario en modo edición.
-     * - getTaskById() ya trae asignado_a como array (multi) si aplica batch
-     * - Pasa assignScope para que la vista respete bloqueos/preselección
-     */
     public function editar(int $idTarea)
+{
+    // ✅ Seguridad
+    if ($r = $this->requireLogin()) {
+        return $r;
+    }
+
+    $idUser = (int) session()->get('id_user');
+    $idArea = (int) session()->get('id_area');
+
+    // ✅ Carga tarea validando permisos
+    $tarea = $this->service->getTaskById($idTarea, $idUser);
+    if (!$tarea) {
+        return redirect()->to(site_url('tareas/gestionar'))
+            ->with('error', 'Tarea no encontrada o no autorizada.');
+    }
+
+    // ✅ Determinar división del usuario
+    $division = $this->service->getDivisionByUser($idUser);
+    if (!$division) {
+        return redirect()->to(site_url('tareas/gestionar'))
+            ->with('error', 'No se pudo determinar la división del usuario.');
+    }
+
+    // ✅ Scope UI
+    $assignScope = $this->service->getAssignScopeForUi($idUser, $idArea);
+
+    // ✅ NUEVO (simple y seguro):
+    // En la vista: si mode === 'self' => NO editar fecha fin, solo solicitar cambio
+    $assignMode = (string)($assignScope['mode'] ?? 'self');
+
+    return view('tareas/asignar', [
+        'divisionUsuario' => $division,
+        'areasDivision'   => $this->service->getAreasByDivision((int) $division['id_division']),
+        'prioridades'     => $this->service->getPrioridades(),
+        'estados'         => $this->service->getEstadosTarea(),
+        'tarea'           => $tarea,
+        'assignScope'     => $assignScope,
+        'assignMode'      => $assignMode, 
+        'old'             => session()->getFlashdata('old') ?? [],
+        'error'           => session()->getFlashdata('error'),
+        'success'         => session()->getFlashdata('success'),
+    ]);
+}
+
+    // ==================================================
+    // ACTUALIZAR
+    // ==================================================
+    public function actualizar(int $idTarea)
     {
-        // Protección de pantalla (view)
+        // ✅ Seguridad
         if ($r = $this->requireLogin()) {
             return $r;
         }
 
-        // Usuario actual
-        $idUser = (int) session()->get('id_user');
+        // ✅ POST del form
+        $post = $this->request->getPost();
 
-        // Cargar tarea (con permisos y batch)
-        $tarea = $this->service->getTaskById($idTarea, $idUser);
+        $currentUserId   = (int) session()->get('id_user');
+        $currentUserArea = (int) session()->get('id_area');
 
-        // Si no existe o no tiene permiso
-        if (!$tarea) {
+        // ==================================================
+        // ✅ (SEGURIDAD EXTRA) BLOQUEAR CAMBIO DE FECHA INICIO
+        // - Aunque la vista lo bloquea, aquí lo reforzamos.
+        // - Cargamos la tarea para tener la fecha_inicio real.
+        // ==================================================
+        $tareaActual = $this->service->getTaskById($idTarea, $currentUserId);
+
+        if (!$tareaActual) {
             return redirect()->to(site_url('tareas/gestionar'))
                 ->with('error', 'Tarea no encontrada o no autorizada.');
         }
 
-        // División del usuario (para combos)
-        $division = $this->service->getDivisionByUser($idUser);
+        // ✅ Fuerza la fecha_inicio a la original (si alguien manipula HTML)
+        if (isset($tareaActual['fecha_inicio'])) {
+            $post['fecha_inicio'] = (string) $tareaActual['fecha_inicio'];
+        }
 
-        if (!$division) {
+        // ==================================================
+        // ✅ Si viene solicitud de revisión (cambio fecha / cancelación)
+        // ==================================================
+        $reviewAction = trim((string) ($post['review_action'] ?? ''));
+        $reviewReason = trim((string) ($post['review_reason'] ?? ''));
+
+        if (in_array($reviewAction, ['date_change', 'cancel'], true)) {
+
+            // ✅ Motivo obligatorio
+            if ($reviewReason === '') {
+                return redirect()->back()
+                    ->with('error', 'Debes escribir un motivo para enviar la solicitud a revisión.')
+                    ->with('old', $post);
+            }
+
+            $requestedEnd = null;
+
+            // ==================================================
+            // ✅ CAMBIO IMPORTANTE:
+            // - La vista manda el "nuevo fin solicitado" en:
+            //   review_requested_fecha_fin
+            // - NO debemos tomarlo desde fecha_fin para evitar mezclar
+            // ==================================================
+            if ($reviewAction === 'date_change') {
+                $requestedEnd = trim((string) ($post['review_requested_fecha_fin'] ?? ''));
+
+                if ($requestedEnd === '') {
+                    return redirect()->back()
+                        ->with('error', 'Debes seleccionar la nueva fecha fin para solicitar el cambio.')
+                        ->with('old', $post);
+                }
+            }
+
+            // ✅ Enviar solicitud al supervisor (service decide el supervisor y guarda en pendientes)
+            $result = $this->service->requestReviewChange(
+                $idTarea,
+                $reviewAction,
+                $requestedEnd,
+                $reviewReason,
+                $currentUserId,
+                $currentUserArea
+            );
+
+            if (!($result['success'] ?? false)) {
+                return redirect()->back()
+                    ->with('error', (string) ($result['error'] ?? 'No se pudo enviar a revisión.'))
+                    ->with('old', $post);
+            }
+
             return redirect()->to(site_url('tareas/gestionar'))
-                ->with('error', 'No se pudo determinar la división del usuario.');
+                ->with('success', (string) ($result['message'] ?? 'Solicitud enviada a revisión.'));
         }
 
-        // Scope real para UI
-        $assignScope = $this->service->getAssignScopeForUi(
-            (int) session()->get('id_user'),
-            (int) session()->get('id_area')
-        );
-
-        // Render de la misma vista "asignar" pero en modo editar (tarea != null)
-        return view('tareas/asignar', [
-            'divisionUsuario' => $division,
-            'areasDivision'   => $this->service->getAreasByDivision((int) $division['id_division']),
-            'prioridades'     => $this->service->getPrioridades(),
-            'estados'         => $this->service->getEstadosTarea(),
-
-            // Tarea existente => modo editar
-            'tarea'           => $tarea,
-
-            // Scope UI
-            'assignScope'     => $assignScope,
-
-            // Flashdata
-            'old'             => session()->getFlashdata('old') ?? [],
-            'error'           => session()->getFlashdata('error'),
-            'success'         => session()->getFlashdata('success'),
-        ]);
-    }
-
-    // ==================================================
-    // ACTUALIZAR (sin validaciones duplicadas)
-    // ==================================================
-
-    /**
-     * actualizar($idTarea)
-     *
-     * ✅ Actualiza una tarea.
-     * - Validación de permisos, batch, cancelados, fechas, prioridad => Service
-     */
-    public function actualizar(int $idTarea)
-    {
-        // Protección de pantalla (post de vista)
-        if ($r = $this->requireLogin()) {
-            return $r;
-        }
-
-        // POST del formulario
-        $post = $this->request->getPost();
-
-        // Actualizar mediante el Service
+        // ==================================================
+        // ✅ Flujo normal (jefes/super pueden guardar directo)
+        // ==================================================
         $result = $this->service->updateTask(
             $idTarea,
             $post,
-            (int) session()->get('id_user'),
-            (int) session()->get('id_area')
+            $currentUserId,
+            $currentUserArea
         );
 
-        // Error => volver atrás con old + error
         if (!($result['success'] ?? false)) {
             return redirect()->back()
                 ->with('error', (string)($result['error'] ?? 'No se pudo actualizar la tarea.'))
                 ->with('old', $post);
         }
 
-        // Ok => volver a gestionar
+        $flashMsg = (string) ($result['message'] ?? 'Tarea actualizada correctamente.');
+
         return redirect()->to(site_url('tareas/gestionar'))
-            ->with('success', 'Tarea actualizada correctamente.');
+            ->with('success', $flashMsg);
     }
 
     // ==================================================
     // API: EVENTOS (FullCalendar)
     // ==================================================
-
-    /**
-     * events()
-     *
-     * ✅ Endpoint JSON para FullCalendar.
-     * QueryString:
-     * - scope=mine     => tareas donde asignado_a = yo
-     * - scope=assigned => tareas donde asignado_por = yo
-     */
     public function events()
     {
-        // Endpoint JSON: si no está logueado => 401
         if (!session()->get('logged_in')) {
             return $this->response->setStatusCode(401);
         }
 
-        // scope (mine | assigned)
-        $scope = (string) ($this->request->getGet('scope') ?? 'mine');
-
-        // usuario actual
+        $scope  = (string) ($this->request->getGet('scope') ?? 'mine');
         $idUser = (int) session()->get('id_user');
 
-        // Respuesta JSON con eventos
         return $this->response->setJSON(
             $this->service->getCalendarEvents($idUser, $scope)
         );
     }
 
     // ==================================================
-    // API: USUARIOS POR ÁREA (SEGURO)
+    // API: USUARIOS POR ÁREA
     // ==================================================
-
-    /**
-     * usersByArea($areaId)
-     *
-     * ✅ Endpoint seguro:
-     * - super    : puede ver usuarios del área solicitada (+ autoasignación garantizada)
-     * - division : solo si el área pertenece a su división (+ autoasignación garantizada)
-     * - area     : fuerza a su área
-     * - self     : solo él mismo (autoasignación)
-     */
     public function usersByArea(int $areaId)
     {
-        // Endpoint JSON: si no está logueado => 401
         if (!session()->get('logged_in')) {
             return $this->response
                 ->setStatusCode(401)
                 ->setJSON(['success' => false, 'error' => 'No autorizado']);
         }
 
-        // Retornamos la lista EXACTA que el Service permite (sin exponer extras)
         return $this->response->setJSON(
             $this->service->getAssignableUsersByArea(
                 $areaId,
@@ -393,19 +340,10 @@ class Tareas extends BaseController
     }
 
     // ==================================================
-    // API: MARCAR REALIZADA (compatibilidad si lo usas)
+    // API: MARCAR REALIZADA (compatibilidad)
     // ==================================================
-
-    /**
-     * marcarCumplida($idTarea)
-     *
-     * ✅ Endpoint histórico/simple (NO es flujo de revisión).
-     * - Mantener por compatibilidad si lo usas en el calendario o en otra vista.
-     * - Solo puede marcar el asignado_a.
-     */
     public function marcarCumplida(int $idTarea)
     {
-        // Endpoint JSON: si no está logueado => error JSON (manteniendo tu estilo)
         if (!session()->get('logged_in')) {
             return $this->response->setJSON([
                 'success' => false,
@@ -413,7 +351,6 @@ class Tareas extends BaseController
             ]);
         }
 
-        // Ejecuta marcado directo (estado realizada) en el Service
         return $this->response->setJSON(
             $this->service->markDone(
                 $idTarea,
@@ -425,62 +362,39 @@ class Tareas extends BaseController
     // ==================================================
     // SATISFACCIÓN
     // ==================================================
+    public function satisfaccion()
+    {
+        if ($r = $this->requireLogin()) {
+            return $r;
+        }
 
-    /**
-     * satisfaccion()
-     *
-     * ✅ Muestra satisfacción semanal (Miércoles a Miércoles)
-     * - data: porcentaje, realizadas, no_realizadas, inicio, fin
-     */
-  public function satisfaccion()
-{
-    if ($r = $this->requireLogin()) return $r;
+        $idUser = (int) session()->get('id_user');
 
-    $idUser = (int) session()->get('id_user');
-
-    return view('tareas/satisfaccion', [
-        'data' => $this->service->getSatisfaccionResumen($idUser)
-    ]);
-}
-
-
-
+        return view('tareas/satisfaccion', [
+            'data' => $this->service->getSatisfaccionResumen($idUser)
+        ]);
+    }
 
     // ==================================================
-    // ✅ ENDPOINTS PARA: Estado + Revisión por lote
-    // (alineado con tu vista gestionar.php)
+    // ✅ Alias: /tareas/estado/{id}
     // ==================================================
-
-    /**
-     * estado($idTarea)
-     *
-     * ✅ ALIAS: /tareas/estado/{id}
-     * - Mantiene compatibilidad con tu JS actual (POST /tareas/estado/{id})
-     * - Reutiliza cambiarEstado() para NO duplicar lógica
-     */
     public function estado(int $idTarea)
     {
-        // Alias directo (no cambiar nada del resto)
         return $this->cambiarEstado($idTarea);
     }
 
     /**
      * cambiarEstado($idTarea)
      *
-     * ✅ Cambia estado (Realizada/No realizada) con flujo:
-     * - Si usuario normal (scope self): envía a revisión (estado 6) + review_requested_state
-     * - Si jefe/asignador/supervisor/gerencia: aplica directo
+     * ✅ Permite SOLO 3 o 4 (Realizada / No realizada)
+     * ✅ Si el usuario es self, va a revisión.
+     * ✅ Si es jefe/super, cierra directo (depende del Service).
      *
-     * ✅ Acepta POST:
-     * - id_estado_tarea  (como manda tu JS actual)
-     * - estado           (compatibilidad)
-     *
-     * ✅ Respuesta:
-     * - success, error, message, csrfHash
+     * ✅ Puede recibir motivo opcional:
+     * - POST: review_reason o motivo
      */
     public function cambiarEstado(int $idTarea)
     {
-        // Endpoint JSON: si no está logueado => 401 + csrfHash (para que tu JS pueda refrescar token)
         if (!session()->get('logged_in')) {
             return $this->response->setStatusCode(401)->setJSON([
                 'success'  => false,
@@ -489,16 +403,12 @@ class Tareas extends BaseController
             ]);
         }
 
-        // 1) Leer estado desde POST:
-        // - Primero id_estado_tarea (tu JS actual)
-        // - Si no existe, usar estado (compatibilidad)
         $estado = (int) (
             $this->request->getPost('id_estado_tarea')
             ?? $this->request->getPost('estado')
             ?? 0
         );
 
-        // 2) Validar: solo 3 o 4 aquí (Realizada / No realizada)
         if (!in_array($estado, [3, 4], true)) {
             return $this->response->setStatusCode(400)->setJSON([
                 'success'  => false,
@@ -507,15 +417,18 @@ class Tareas extends BaseController
             ]);
         }
 
-        // 3) Ejecutar lógica del flujo en el Service
+        // ✅ Motivo opcional
+        $reason = (string) ($this->request->getPost('review_reason') ?? $this->request->getPost('motivo') ?? '');
+        $reason = trim($reason);
+
         $result = $this->service->requestOrSetEstado(
             $idTarea,
             $estado,
             (int) session()->get('id_user'),
-            (int) session()->get('id_area')
+            (int) session()->get('id_area'),
+            ($reason !== '' ? $reason : null)
         );
 
-        // 4) Responder JSON consistente + csrfHash para tu JS
         return $this->response->setJSON([
             'success'  => (bool) ($result['success'] ?? false),
             'error'    => (string) ($result['error'] ?? ''),
@@ -524,36 +437,57 @@ class Tareas extends BaseController
         ]);
     }
 
-    /**
-     * revisionBatch()
-     *
-     * ✅ ALIAS: /tareas/revision-batch
-     * - Mantiene compatibilidad con rutas/JS que apunten a este endpoint
-     * - Reutiliza revisarLote() para NO duplicar lógica
-     */
-    public function revisionBatch()
+    // ==================================================
+    // ✅ Cancelar
+    // - usuario asignado => solicita revisión
+    // - supervisor directo / super => puede aplicar directo
+    // ==================================================
+    public function cancelar(int $idTarea)
     {
-        // Alias directo
-        return $this->revisarLote();
+        // ✅ Seguridad
+        if ($r = $this->requireLogin()) {
+            return $r;
+        }
+
+        if (!$this->request->is('post')) {
+            return redirect()->to(site_url('tareas/gestionar'));
+        }
+
+        // ✅ Usuario actual
+        $currentUserId   = (int) (session()->get('id_user') ?? 0);
+        $currentUserArea = (int) (session()->get('id_area') ?? 0);
+
+        // ✅ Motivo:
+        // - si es usuario asignado/self, el Service lo exigirá
+        // - si es supervisor/super, puede ir vacío y cancelar directo
+        $reason = (string) ($this->request->getPost('review_reason') ?? $this->request->getPost('motivo') ?? '');
+        $reason = trim($reason);
+
+        // ✅ IMPORTANTE:
+        // centralizamos toda la lógica en cancelTask()
+        $result = $this->service->cancelTask(
+            $idTarea,
+            $currentUserId,
+            $currentUserArea,
+            ($reason !== '' ? $reason : null)
+        );
+
+        if (!empty($result['success'])) {
+            return redirect()->to(site_url('tareas/gestionar'))
+                ->with('success', (string) ($result['message'] ?? 'Acción ejecutada correctamente.'));
+        }
+
+        return redirect()->to(site_url('tareas/gestionar'))
+            ->with('error', (string) ($result['error'] ?? 'No se pudo cancelar la tarea.'));
     }
 
-    /**
-     * revisarLote()
-     *
-     * ✅ Revisión masiva:
-     * - action: approve | reject
-     * - ids: array de id_tarea
-     *
-     * ✅ Acepta POST:
-     * - task_ids[] (recomendado)
-     * - ids[]      (compatibilidad)
-     *
-     * ✅ Respuesta:
-     * - success, error, csrfHash
-     */
-    public function revisarLote()
+    // ==================================================
+    // ✅ Endpoint general 3/4/5 (si lo usas por AJAX)
+    // - 5 => self solicita revisión / supervisor cancela directo
+    // - 3/4 => requestOrSetEstado
+    // ==================================================
+    public function cambiarEstadoGeneral(int $idTarea)
     {
-        // Endpoint JSON: si no está logueado => 401 + csrfHash
         if (!session()->get('logged_in')) {
             return $this->response->setStatusCode(401)->setJSON([
                 'success'  => false,
@@ -562,17 +496,89 @@ class Tareas extends BaseController
             ]);
         }
 
-        // 1) IDs: soporta ambos nombres (task_ids / ids)
+        $estado = (int) (
+            $this->request->getPost('id_estado_tarea')
+            ?? $this->request->getPost('estado')
+            ?? 0
+        );
+
+        if (!in_array($estado, [3, 4, 5], true)) {
+            return $this->response->setStatusCode(400)->setJSON([
+                'success'  => false,
+                'error'    => 'Estado inválido. Se permite 3 (Realizada), 4 (No realizada) o 5 (Cancelada).',
+                'csrfHash' => csrf_hash(),
+            ]);
+        }
+
+        // ==================================================
+        // ✅ 5 = Cancelada
+        // - self/asignado => a revisión con motivo obligatorio
+        // - supervisor/super => cancelación directa
+        // ==================================================
+        if ($estado === 5) {
+            $reason = (string) ($this->request->getPost('review_reason') ?? $this->request->getPost('motivo') ?? '');
+            $reason = trim($reason);
+
+            $result = $this->service->cancelTask(
+                $idTarea,
+                (int) session()->get('id_user'),
+                (int) session()->get('id_area'),
+                ($reason !== '' ? $reason : null)
+            );
+
+            return $this->response->setJSON([
+                'success'  => (bool) ($result['success'] ?? false),
+                'error'    => (string) ($result['error'] ?? ''),
+                'message'  => (string) ($result['message'] ?? ''),
+                'csrfHash' => csrf_hash(),
+            ]);
+        }
+
+        $reason = (string) ($this->request->getPost('review_reason') ?? $this->request->getPost('motivo') ?? '');
+        $reason = trim($reason);
+
+        $result = $this->service->requestOrSetEstado(
+            $idTarea,
+            $estado,
+            (int) session()->get('id_user'),
+            (int) session()->get('id_area'),
+            ($reason !== '' ? $reason : null)
+        );
+
+        return $this->response->setJSON([
+            'success'  => (bool) ($result['success'] ?? false),
+            'error'    => (string) ($result['error'] ?? ''),
+            'message'  => (string) ($result['message'] ?? ''),
+            'csrfHash' => csrf_hash(),
+        ]);
+    }
+
+    // ==================================================
+    // ✅ Revisión por lote
+    // ==================================================
+    public function revisionBatch()
+    {
+        return $this->revisarLote();
+    }
+
+    public function revisarLote()
+    {
+        if (!session()->get('logged_in')) {
+            return $this->response->setStatusCode(401)->setJSON([
+                'success'  => false,
+                'error'    => 'No autorizado',
+                'csrfHash' => csrf_hash(),
+            ]);
+        }
+
         $ids = (array) (
             $this->request->getPost('task_ids')
             ?? $this->request->getPost('ids')
             ?? []
         );
 
-        // 2) Acción: approve | reject
         $action = (string) ($this->request->getPost('action') ?? '');
 
-        // 3) Procesar en el Service (valida permisos + aplica cambios)
         $result = $this->service->reviewBatch(
             $ids,
             $action,
@@ -580,11 +586,31 @@ class Tareas extends BaseController
             (int) session()->get('id_area')
         );
 
-        // 4) Respuesta JSON + csrfHash
         return $this->response->setJSON([
             'success'  => (bool) ($result['success'] ?? false),
             'error'    => (string) ($result['error'] ?? ''),
+            'message'  => (string) ($result['message'] ?? ''),
             'csrfHash' => csrf_hash(),
         ]);
     }
+/**
+ * Marca como vistas las notificaciones de decisión del usuario solicitante.
+ * Se llama vía AJAX cuando el modal se muestra o se cierra.
+ */
+public function markDecisionSeen()
+{
+    if ($r = $this->requireLogin()) {
+        return $r;
+    }
+
+    $idUser = (int) session()->get('id_user');
+    $count  = $this->service->markDecisionNotificationsAsSeen($idUser);
+
+    return $this->response->setJSON([
+        'success' => true,
+        'count'   => $count,
+        'csrfHash'=> csrf_hash(),
+    ]);
+}
+
 }

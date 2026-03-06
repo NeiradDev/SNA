@@ -2,55 +2,106 @@
 
 namespace App\Controllers;
 
+use App\Services\AuthService;
+use App\Services\MenuService;
+use App\Services\PermissionService;
 use CodeIgniter\Controller;
 use CodeIgniter\HTTP\RequestInterface;
 use CodeIgniter\HTTP\ResponseInterface;
 use Psr\Log\LoggerInterface;
-use App\Services\MenuService;
-use App\Services\AuthService;
 
 abstract class BaseController extends Controller
 {
     protected array $menuAllowed = [];
+    protected array $permissions = [];
 
     public function initController(
         RequestInterface $request,
         ResponseInterface $response,
         LoggerInterface $logger
-    )
-    {
+    ) {
         parent::initController($request, $response, $logger);
 
         if (session()->get('logged_in') === true) {
-
-            // -------------------------------------------------------
-            // ✅ 1) “AUTO-FIX” DEL NIVEL (por cargo_nombre de sesión)
-            // -------------------------------------------------------
-            $nivelActual = (string)(session()->get('nivel') ?? '');
-            $cargoSesion = (string)(session()->get('cargo_nombre') ?? '');
-            $areaSesion  = session()->get('id_area');
-            $areaId      = ($areaSesion !== null) ? (int)$areaSesion : null;
-
-            // Recalcula nivel basado en texto (no DB)
             $authService = new AuthService();
-            $nivelReal   = $authService->resolveNivel($cargoSesion, $areaId);
+            $menuService = new MenuService();
 
-            // Si cambia, actualizamos sesión (esto te arregla el N1 pegado)
+            $nivelActual = (string) (session()->get('nivel') ?? '');
+            $cargoSesion = (string) (session()->get('cargo_nombre') ?? '');
+            $areaSesion  = session()->get('id_area');
+            $areaId      = ($areaSesion !== null) ? (int) $areaSesion : null;
+
+            $nivelReal = $authService->resolveNivel($cargoSesion, $areaId);
+
             if ($nivelReal !== '' && $nivelReal !== $nivelActual) {
                 session()->set('nivel', $nivelReal);
-                $nivelActual = $nivelReal;
             }
 
-            // -------------------------------------------------------
-            // ✅ 2) Menú por nivel
-            // -------------------------------------------------------
-            if ($nivelActual !== '') {
-                $menuService = new MenuService();
-                $this->menuAllowed = $menuService->getMenuByNivel($nivelActual);
+            $idUser  = (int) (session()->get('id_user') ?? 0);
+            $idCargo = (int) (session()->get('id_cargo') ?? 0);
 
-                // Variable global para vistas
-                service('renderer')->setVar('menuAllowed', $this->menuAllowed);
+            // =====================================================
+            // SUPERADMIN TEMPORAL: id_cargo = 1
+            // =====================================================
+            if ($idCargo === 1) {
+                $this->permissions = [
+                    'home.ver',
+                    'perfil.ver',
+
+                    'usuarios.ver',
+                    'usuarios.crear',
+                    'usuarios.editar',
+
+                    'agencias.ver',
+
+                    'division.ver',
+                    'division.crear',
+
+                    'areas.ver',
+
+                    'cargos.ver',
+                    'cargos.crear',
+                    'cargos.editar',
+                    'cargos.eliminar',
+
+                    'tareas.calendario',
+                    'tareas.asignar',
+                    'tareas.gestionar',
+                    'tareas.satisfaccion',
+
+                    'reporte.horario_plan',
+                    'reporte.plan',
+                    'reporte.historico',
+                    'reporte.completado',
+
+                    'mantenimiento.divisiones.ver',
+                    'mantenimiento.divisiones.crear',
+                    'mantenimiento.divisiones.editar',
+
+                    'mantenimiento.areas.ver',
+                    'mantenimiento.areas.crear',
+                    'mantenimiento.areas.editar',
+
+                    'mantenimiento.cargos.ver',
+                    'mantenimiento.cargos.crear',
+                    'mantenimiento.cargos.editar',
+
+                    'orgchart.ver',
+                ];
+
+                $this->menuAllowed = $menuService->getFullMenu();
+            } else {
+                if ($idUser > 0) {
+                    $permissionService = new PermissionService();
+                    $this->permissions = $permissionService->getUserPermissions($idUser);
+                    $this->menuAllowed = $menuService->getMenuByPermissions($this->permissions);
+                }
             }
+
+            session()->set('permissions', $this->permissions);
+
+            service('renderer')->setVar('menuAllowed', $this->menuAllowed);
+            service('renderer')->setVar('permissions', $this->permissions);
         }
     }
 }

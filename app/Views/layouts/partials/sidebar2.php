@@ -1,17 +1,51 @@
 <?php
+
+/**
+ * =========================================================
+ * Vista: layouts/partials/sidebar2.php
+ * =========================================================
+ * Sidebar principal del sistema.
+ *
+ * Esta versión:
+ * - usa $menuAllowed para mostrar u ocultar módulos
+ * - mantiene el header superior
+ * - agrega la opción "Permisos" dentro de Mantenimiento
+ * - mantiene el control dinámico de Plan de Batalla
+ * =========================================================
+ */
+
 /* ===============================
    PERFIL DESDE SESIÓN
 =================================*/
-$logged    = (bool) session()->get('logged_in');
-$nombres   = (string) session()->get('nombres');
-$apellidos = (string) session()->get('apellidos');
+$logged         = (bool) session()->get('logged_in');
+$nombres        = (string) session()->get('nombres');
+$apellidos      = (string) session()->get('apellidos');
 $nombreCompleto = trim($nombres . ' ' . $apellidos);
 $labelPerfil    = ($logged && $nombreCompleto !== '') ? $nombreCompleto : 'Mi perfil';
 
 /* ===============================
-   MENÚ PERMITIDO (POR NIVEL)
+   MENÚ PERMITIDO (POR PERMISOS)
 =================================*/
-$menuAllowed = $menuAllowed ?? [];
+$menuAllowed = is_array($menuAllowed ?? null) ? $menuAllowed : [];
+
+/* ===============================
+   PERMISOS DIRECTOS (opcionales)
+   Si BaseController envía $permissions,
+   aquí los usamos para links de la barra superior.
+=================================*/
+$permissions = is_array($permissions ?? null) ? $permissions : [];
+
+/**
+ * =========================================================
+ * Helper local para validar permiso
+ * =========================================================
+ */
+if (!function_exists('sidebar_has_permission')) {
+  function sidebar_has_permission(array $permissions, string $code): bool
+  {
+    return in_array($code, $permissions, true);
+  }
+}
 ?>
 
 <header>
@@ -23,29 +57,40 @@ $menuAllowed = $menuAllowed ?? [];
         <div></div>
       </div>
     </div>
-    <?php //session()->get('nivel'); 
-    ?>
+
     <div class="brand" onclick="window.location.href='<?= base_url('home') ?>'">
       <img src="<?= base_url('assets/img/logo-bpc.png') ?>" alt="logo-bpc" class="logo">
     </div>
   </div>
+
   <div class="right">
-    <a href="<?= base_url('tareas/satisfaccion') ?>">
-      <img src="<?= base_url('assets/img/icons/porcentaje.svg') ?>" alt="satisfaccion">
-      <span class="text-mini">Satisfacción</span>
-    </a>
-    <a href="<?= base_url('tareas/calendario') ?>">
-      <img src="<?= base_url('assets/img/icons/calendario.svg') ?>" alt="calendario">
-      <span class="text-mini">calendario</span>
-    </a>
-    <a href="<?= base_url('tareas/gestionar') ?>">
-      <img src="<?= base_url('assets/img/icons/actividades.svg') ?>" alt="actividades">
-      <span class="text-mini">Actividades</span>
-    </a>
-    <a href="<?= base_url('perfil') ?>">
-      <img src="<?= base_url('assets/img/icons/perfil.svg') ?>" alt="perfil">
-      <span class="text-mini">Perfil</span>
-    </a>
+    <?php if (sidebar_has_permission($permissions, 'tareas.satisfaccion') || (int) session()->get('id_cargo') === 1): ?>
+      <a href="<?= base_url('tareas/satisfaccion') ?>">
+        <img src="<?= base_url('assets/img/icons/porcentaje.svg') ?>" alt="satisfaccion">
+        <span class="text-mini">Satisfacción</span>
+      </a>
+    <?php endif; ?>
+
+    <?php if (sidebar_has_permission($permissions, 'tareas.calendario') || (int) session()->get('id_cargo') === 1): ?>
+      <a href="<?= base_url('tareas/calendario') ?>">
+        <img src="<?= base_url('assets/img/icons/calendario.svg') ?>" alt="calendario">
+        <span class="text-mini">Calendario</span>
+      </a>
+    <?php endif; ?>
+
+    <?php if (sidebar_has_permission($permissions, 'tareas.gestionar') || (int) session()->get('id_cargo') === 1): ?>
+      <a href="<?= base_url('tareas/gestionar') ?>">
+        <img src="<?= base_url('assets/img/icons/actividades.svg') ?>" alt="actividades">
+        <span class="text-mini">Actividades</span>
+      </a>
+    <?php endif; ?>
+
+    <?php if (sidebar_has_permission($permissions, 'perfil.ver') || (int) session()->get('id_cargo') === 1): ?>
+      <a href="<?= base_url('perfil') ?>">
+        <img src="<?= base_url('assets/img/icons/perfil.svg') ?>" alt="perfil">
+        <span class="text-mini"><?= esc($labelPerfil) ?></span>
+      </a>
+    <?php endif; ?>
   </div>
 </header>
 
@@ -59,32 +104,35 @@ $menuAllowed = $menuAllowed ?? [];
       <?php if (!empty($menuAllowed['reporte'])): ?>
         <li class="has-sub">
           <a href="#" class="toggle">
-            <img src="<?= base_url('assets/img/icons/report.svg') ?>" alt="">
+            <img src="<?= base_url('assets/img/icons/report.svg') ?>" alt="reportes">
             <span>Reporte</span>
             <span class="arrow"></span>
           </a>
-          <ul class="sub-menu">
 
-            <?php if (in_array('horario_plan', $menuAllowed['reporte'])): ?>
-              <li><a href="<?= base_url('reporte/horario-plan') ?>">Horario Plan</a></li>
+          <ul class="sub-menu">
+            <?php if (in_array('horario_plan', $menuAllowed['reporte'], true)): ?>
+              <li>
+                <a href="<?= base_url('reporte/horario-plan') ?>">Horario Plan</a>
+              </li>
             <?php endif; ?>
 
-            <?php if (in_array('historico', $menuAllowed['reporte'])): ?>
+            <?php if (in_array('historico', $menuAllowed['reporte'], true)): ?>
               <li>
                 <a href="<?= base_url('reporte/historico-plan') ?>">Histórico</a>
               </li>
             <?php endif; ?>
 
-            <?php if (in_array('plan_batalla', $menuAllowed['reporte'])): ?>
+            <?php if (in_array('plan_batalla', $menuAllowed['reporte'], true)): ?>
               <li data-schedule="plan">
                 <a href="<?= base_url('reporte/plan') ?>">Plan de batalla</a>
               </li>
             <?php endif; ?>
 
-            <?php if (in_array('completado', $menuAllowed['reporte'])): ?>
-              <li><a href="<?= base_url('reporte/completado') ?>">Completado</a></li>
+            <?php if (in_array('completado', $menuAllowed['reporte'], true)): ?>
+              <li>
+                <a href="<?= base_url('reporte/completado') ?>">Completado</a>
+              </li>
             <?php endif; ?>
-
           </ul>
         </li>
       <?php endif; ?>
@@ -95,7 +143,7 @@ $menuAllowed = $menuAllowed ?? [];
       <?php if (!empty($menuAllowed['agencias'])): ?>
         <li>
           <a href="<?= base_url('agencias') ?>">
-            <img src="<?= base_url('assets/img/icons/agencias.svg') ?>" alt="">
+            <img src="<?= base_url('assets/img/icons/agencias.svg') ?>" alt="agencias">
             <span>Agencias</span>
           </a>
         </li>
@@ -107,7 +155,7 @@ $menuAllowed = $menuAllowed ?? [];
       <?php if (!empty($menuAllowed['division'])): ?>
         <li>
           <a href="<?= base_url('division') ?>">
-            <img src="<?= base_url('assets/img/icons/division.svg') ?>" alt="">
+            <img src="<?= base_url('assets/img/icons/division.svg') ?>" alt="division">
             <span>División</span>
           </a>
         </li>
@@ -119,12 +167,15 @@ $menuAllowed = $menuAllowed ?? [];
       <?php if (!empty($menuAllowed['planificacion'])): ?>
         <li class="has-sub">
           <a href="#" class="toggle">
-            <img src="<?= base_url('assets/img/icons/planificacion.svg') ?>" alt="">
+            <img src="<?= base_url('assets/img/icons/planificacion.svg') ?>" alt="planificacion">
             <span>Planificación</span>
             <span class="arrow"></span>
           </a>
+
           <ul class="sub-menu">
-            <li><a href="<?= base_url('tareas/asignar') ?>">Asignar</a></li>
+            <li>
+              <a href="<?= base_url('tareas/asignar') ?>">Asignar</a>
+            </li>
           </ul>
         </li>
       <?php endif; ?>
@@ -135,7 +186,7 @@ $menuAllowed = $menuAllowed ?? [];
       <?php if (!empty($menuAllowed['usuarios'])): ?>
         <li>
           <a href="<?= base_url('usuarios') ?>">
-            <img src="<?= base_url('assets/img/icons/users.svg') ?>" alt="">
+            <img src="<?= base_url('assets/img/icons/users.svg') ?>" alt="usuarios">
             <span>Usuarios</span>
           </a>
         </li>
@@ -147,14 +198,24 @@ $menuAllowed = $menuAllowed ?? [];
       <?php if (!empty($menuAllowed['mantenimiento'])): ?>
         <li class="has-sub">
           <a href="#" class="toggle">
-            <img src="<?= base_url('assets/img/icons/settings.svg') ?>" alt="">
+            <img src="<?= base_url('assets/img/icons/settings.svg') ?>" alt="mantenimiento">
             <span>Mantenimiento</span>
             <span class="arrow"></span>
           </a>
+
           <ul class="sub-menu">
-            <li><a href="<?= base_url('mantenimiento/divisiones') ?>">Divisiones</a></li>
-            <li><a href="<?= base_url('mantenimiento/areas') ?>">Áreas</a></li>
-            <li><a href="<?= base_url('mantenimiento/cargos') ?>">Cargos</a></li>
+            <li>
+              <a href="<?= base_url('mantenimiento/divisiones') ?>">Divisiones</a>
+            </li>
+            <li>
+              <a href="<?= base_url('mantenimiento/areas') ?>">Áreas</a>
+            </li>
+            <li>
+              <a href="<?= base_url('mantenimiento/cargos') ?>">Cargos</a>
+            </li>
+            <li>
+              <a href="<?= base_url('mantenimiento/permisos') ?>">Permisos</a>
+            </li>
           </ul>
         </li>
       <?php endif; ?>
@@ -174,7 +235,11 @@ $menuAllowed = $menuAllowed ?? [];
 </div>
 
 <script>
-  /* Toggle submenus */
+  /**
+   * =========================================================
+   * Toggle de submenús
+   * =========================================================
+   */
   document.querySelectorAll('.toggle').forEach(function(toggle) {
     toggle.addEventListener('click', function(e) {
       e.preventDefault();
@@ -182,7 +247,11 @@ $menuAllowed = $menuAllowed ?? [];
     });
   });
 
-  /* Plan de Batalla (horario dinámico) */
+  /**
+   * =========================================================
+   * Plan de Batalla (visibilidad según horario dinámico)
+   * =========================================================
+   */
   var statusUrl = "<?= site_url('reporte/plan-status') ?>";
 
   function setPlanVisibility(isEnabled) {
@@ -198,12 +267,17 @@ $menuAllowed = $menuAllowed ?? [];
           'X-Requested-With': 'XMLHttpRequest'
         }
       });
+
       if (!res.ok) return;
+
       var data = await res.json();
+
       if (data && typeof data.enabled !== 'undefined') {
         setPlanVisibility(!!data.enabled);
       }
-    } catch (e) {}
+    } catch (e) {
+      // Silencioso por ahora
+    }
   }
 
   refreshPlanStatus();

@@ -532,7 +532,7 @@ const bandsAndWatermarkPlugin = {
       ctx.fillRect(chartArea.left, yTop, chartArea.right - chartArea.left, yBot - yTop);
     });
 
-    const meta = 80;
+    const meta = 19;
     const yMeta = y.getPixelForValue(meta);
 
     ctx.save();
@@ -551,7 +551,7 @@ const bandsAndWatermarkPlugin = {
     ctx.font = '700 12px system-ui, -apple-system, Segoe UI, Roboto, Arial';
     ctx.textAlign = 'left';
     ctx.textBaseline = 'bottom';
-    ctx.fillText('Meta 80%', chartArea.left + 8, yMeta - 4);
+    ctx.fillText('Limite 20%', chartArea.left + 8, yMeta - 4);
     ctx.restore();
 
     ctx.restore();

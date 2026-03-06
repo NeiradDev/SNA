@@ -64,6 +64,11 @@ class TareaModel extends Model
         'asignado_por',
         'tipo_actividad',
         'created_at',
+        'review_action',
+        'review_reason',
+        'review_requested_by',
+        'review_requested_fecha_fin',
+        'review_previous_state',
 
         // ---------------------------
         // BATCH (multi-asignación)
@@ -78,6 +83,7 @@ class TareaModel extends Model
         'review_requested_at',
         'approved_by',
         'approved_at',
+        'recurrence_uid'
     ];
 
     /**

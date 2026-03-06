@@ -96,6 +96,7 @@ left: 0;
     font-weight: 900;
     color: var(--text-title-color);
 }
+
 /* Sección derecha */
 .right {
   display: flex;
@@ -211,11 +212,8 @@ main.menu-toggle {
 }
 
 /*Responsive*/
-@media (max-width: 480px) {
-    .right {
-    gap: 0.5rem;
-  }
-  .text-mini {
+@media (max-width: 500px) {
+  .right.icons-header {
     display: none;
   }
 

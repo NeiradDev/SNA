@@ -78,110 +78,138 @@ class PlanBatallaService
 
         // 2) Guardar extras semanales (si aplica)
         $this->saveExtrasSemana($idUser, $post);
-$this->saveDivisionAndAreasHistoricoIfChiefDivision($idUser, (string) $data['semana']);
+        $this->saveDivisionAndAreasHistoricoIfChiefDivision($idUser, (string) $data['semana']);
         return ['ok' => true];
     }
 
     private function saveDivisionAndAreasHistoricoIfChiefDivision(int $idUser, string $semana): void
-{
-    // ---------------------------
-    // 1) ¿Es jefe de división?
-    // ---------------------------
-    $div = $this->db->query(
-        'SELECT id_division FROM public.division WHERE id_jf_division = ? LIMIT 1',
-        [$idUser]
-    )->getRowArray();
+    {
+        // ---------------------------
+        // 1) ¿Es jefe de división?
+        // ---------------------------
+        $div = $this->db->query(
+            'SELECT id_division FROM public.division WHERE id_jf_division = ? LIMIT 1',
+            [$idUser]
+        )->getRowArray();
 
-    if (empty($div)) {
-        return; // No es jefe de división => no guardamos nada adicional
-    }
-
-    $divisionId = (int) $div['id_division'];
-
-    // ---------------------------
-    // 2) Calcular satisfacción (misma lógica de TareaService)
-    //    - getSatisfaccionResumen() ya arma:
-    //      * card "division" (global)
-    //      * cards "area" para todas las áreas de la división
-    // ---------------------------
-    $resumen = $this->tareaService->getSatisfaccionResumen($idUser);
-    $cards   = (array) ($resumen['cards'] ?? []);
-
-    // 2.1) Sacar card de división
-    $divisionCard = null;
-    foreach ($cards as $c) {
-        if (($c['scope'] ?? '') === 'division' && (int)($c['division_id'] ?? 0) === $divisionId) {
-            $divisionCard = $c;
-            break;
+        if (empty($div)) {
+            return; // No es jefe de división => no guardamos nada adicional
         }
-    }
 
-    // Si por algún motivo no se pudo calcular, salimos con seguridad
-    if (empty($divisionCard)) {
-        return;
-    }
+        $divisionId = (int) $div['id_division'];
 
-    $divisionPct = (float) ($divisionCard['porcentaje'] ?? 0);
+        // ---------------------------
+        // 2) Calcular satisfacción (misma lógica de TareaService)
+        //    - getSatisfaccionResumen() ya arma:
+        //      * card "division" (global)
+        //      * cards "area" para todas las áreas de la división
+        // ---------------------------
+        $resumen = $this->tareaService->getSatisfaccionResumen($idUser);
+        $cards   = (array) ($resumen['cards'] ?? []);
 
-    // ---------------------------
-    // 3) Guardar historico_division (UPSERT)
-    // ---------------------------
-    $sqlDiv = <<<'SQL'
+        // 2.1) Sacar card de división
+        $divisionCard = null;
+        foreach ($cards as $c) {
+            if (($c['scope'] ?? '') === 'division' && (int)($c['division_id'] ?? 0) === $divisionId) {
+                $divisionCard = $c;
+                break;
+            }
+        }
+
+        // Si por algún motivo no se pudo calcular, salimos con seguridad
+        if (empty($divisionCard)) {
+            return;
+        }
+
+        $divisionPct = (float) ($divisionCard['porcentaje'] ?? 0);
+
+        // ---------------------------
+        // 3) Guardar historico_division (UPSERT)
+        // ---------------------------
+        $sqlDiv = <<<'SQL'
 INSERT INTO public.historico_division (semana, id_division, satisfaccion, created_at)
 VALUES (?, ?, ?, NOW())
 ON CONFLICT (semana, id_division) DO UPDATE SET
     satisfaccion = EXCLUDED.satisfaccion
 SQL;
 
-    $this->db->query($sqlDiv, [$semana, $divisionId, $divisionPct]);
+        $this->db->query($sqlDiv, [$semana, $divisionId, $divisionPct]);
 
-    // ---------------------------
-    // 4) Guardar historico_area (todas las áreas de esa división)
-    //    OJO: solo guardamos las cards de áreas que vienen desde la división:
-    //    "Área: X"  (no las de "Mi Área a cargo: X" para evitar duplicados)
-    // ---------------------------
-    $sqlArea = <<<'SQL'
+        // ---------------------------
+        // 4) Guardar historico_area (todas las áreas de esa división)
+        //    OJO: solo guardamos las cards de áreas que vienen desde la división:
+        //    "Área: X"  (no las de "Mi Área a cargo: X" para evitar duplicados)
+        // ---------------------------
+        $sqlArea = <<<'SQL'
 INSERT INTO public.historico_area (semana, id_area, satisfaccion, created_at)
 VALUES (?, ?, ?, NOW())
 ON CONFLICT (semana, id_area) DO UPDATE SET
     satisfaccion = EXCLUDED.satisfaccion
 SQL;
 
-    foreach ($cards as $c) {
-        if (($c['scope'] ?? '') !== 'area') continue;
+        foreach ($cards as $c) {
+            if (($c['scope'] ?? '') !== 'area') continue;
 
-        $titulo = (string) ($c['titulo'] ?? '');
-        if (stripos($titulo, 'Área:') !== 0) {
-            // Evitamos "Mi Área a cargo:" y cualquier otra variante
-            continue;
+            $titulo = (string) ($c['titulo'] ?? '');
+            if (stripos($titulo, 'Área:') !== 0) {
+                // Evitamos "Mi Área a cargo:" y cualquier otra variante
+                continue;
+            }
+
+            $areaId = (int) ($c['area_id'] ?? 0);
+            if ($areaId <= 0) continue;
+
+            $areaPct = (float) ($c['porcentaje'] ?? 0);
+
+            $this->db->query($sqlArea, [$semana, $areaId, $areaPct]);
         }
-
-        $areaId = (int) ($c['area_id'] ?? 0);
-        if ($areaId <= 0) continue;
-
-        $areaPct = (float) ($c['porcentaje'] ?? 0);
-
-        $this->db->query($sqlArea, [$semana, $areaId, $areaPct]);
     }
-}
     private function currentWeekStart(): string
     {
+        /**
+         * =========================================================
+         * Semana negocio: JUEVES → MIÉRCOLES
+         * En historico.semana guardamos el "MIÉRCOLES DE CORTE" (Y-m-d)
+         *
+         * ✅ REGLA BASE:
+         * - Lun/Mar/Mié => corte = ESTE miércoles
+         * - Jue/Vie/Sáb/Dom => corte = PRÓXIMO miércoles
+         *
+         * ✅ REGLA DE GRACIA (lo que pediste):
+         * - Si HOY es JUEVES y es ANTES de las 12:00 (hora local),
+         *   entonces TODAVÍA trabajamos con el corte del miércoles anterior,
+         *   es decir: "wednesday this week" (ayer).
+         * =========================================================
+         */
+
         $tz = new \DateTimeZone('America/Guayaquil');
-        $dt = new \DateTime('now', $tz);
-        $dt->setTime(0, 0, 0);
+        $dt = new \DateTimeImmutable('now', $tz);
 
         // 1=Lunes ... 7=Domingo
         $dayOfWeek = (int) $dt->format('N');
+        $hour      = (int) $dt->format('H');
 
-        if ($dayOfWeek <= 3) {
-            // ✅ Lun/Mar/Mié => el corte es ESTE miércoles
-            $dt->modify('wednesday this week');
-        } else {
-            // ✅ Jue/Vie/Sáb/Dom => el corte es el PRÓXIMO miércoles
-            $dt->modify('next wednesday');
+        // ---------------------------------------------------------
+        // ✅ CASO ESPECIAL: JUEVES antes de 12:00 => corte = AYER (miércoles)
+        // ---------------------------------------------------------
+        if ($dayOfWeek === 4 && $hour < 12) {
+            // "wednesday this week" en jueves => ayer
+            $cut = $dt->modify('wednesday this week')->setTime(0, 0, 0);
+            return $cut->format('Y-m-d');
         }
 
-        return $dt->format('Y-m-d');
+        // ---------------------------------------------------------
+        // ✅ REGLA NORMAL
+        // ---------------------------------------------------------
+        if ($dayOfWeek <= 3) {
+            // Lun/Mar/Mié => corte es ESTE miércoles
+            $cut = $dt->modify('wednesday this week')->setTime(0, 0, 0);
+        } else {
+            // Jue/Vie/Sáb/Dom => corte es el PRÓXIMO miércoles
+            $cut = $dt->modify('next wednesday')->setTime(0, 0, 0);
+        }
+
+        return $cut->format('Y-m-d');
     }
 
     /* =====================================================
@@ -192,23 +220,36 @@ SQL;
     ===================================================== */
     public function getCurrentWeekRange(): array
     {
-        $tz     = new \DateTimeZone('America/Guayaquil');
-        $semana = new \DateTime($this->currentWeekStart(), $tz);
+        /**
+         * =========================================================
+         * Rango semana negocio (JUEVES → MIÉRCOLES)
+         * ✅ Fuente única: TareaService::getBusinessWeekRange()
+         * ✅ Incluye regla de gracia jueves < 12:00
+         *
+         * Salida (misma firma que ya usas):
+         * - inicio: 'Y-m-d 00:00:00'
+         * - fin:    'Y-m-d 23:59:59'
+         * - semana: 'Y-m-d' (miércoles de corte)
+         * =========================================================
+         */
 
-        // Inicio = jueves (6 días antes del miércoles de corte)
-        $inicio = clone $semana;
-        $inicio->modify('-6 days');
+        // 1) Traer rango oficial desde TareaService (con gracia)
+        $range = $this->tareaService->getBusinessWeekRangePublic();
+        /** @var \DateTimeImmutable $start */
+        $start = $range['start']; // jueves 00:00 (o jueves anterior si es jueves < 12)
 
-        // Fin visible = miércoles (el mismo día de corte)
-        $fin = clone $semana;
+        // 2) Miércoles visible (misma semana del start)
+        $endDisplay = $start->modify('+6 days')->setTime(0, 0, 0);
+
+        // 3) Clave de corte (miércoles) para historico.semana
+        $cutKey = (string) ($range['cutKey'] ?? $endDisplay->format('Y-m-d'));
 
         return [
-            'inicio' => $inicio->format('Y-m-d 00:00:00'),
-            'fin'    => $fin->format('Y-m-d 23:59:59'),
-            'semana' => $semana->format('Y-m-d'),
+            'inicio' => $start->format('Y-m-d 00:00:00'),
+            'fin'    => $endDisplay->format('Y-m-d 23:59:59'),
+            'semana' => $cutKey,
         ];
     }
-
     /* =====================================================
        TAREAS DE LA SEMANA (MÍAS O ASIGNADAS)
     ===================================================== */
@@ -309,8 +350,8 @@ SQL;
     ===================================================== */
     private function saveExtrasSemana(int $idUser, array $post): void
     {
-        $semanaCorte = $this->currentWeekStart();
-
+        // ✅ Mismo corte que satisfacción (incluye gracia)
+        $semanaCorte = $this->tareaService->getSemanaCorteKey();
         $cuota    = trim((string)($post['cuota_descripcion'] ?? ''));
         $objetivo = trim((string)($post['objetivo_estrategico'] ?? ''));
 
@@ -324,7 +365,8 @@ SQL;
 
     public function getExtrasSemana(int $idUser): array
     {
-        $semanaCorte = $this->currentWeekStart();
+        // ✅ Mismo corte que satisfacción (incluye gracia)
+        $semanaCorte = $this->tareaService->getSemanaCorteKey();
 
         $row = $this->db->table('cuotas_semana')
             ->where('id_user', $idUser)
@@ -353,8 +395,8 @@ SQL;
     private function buildHistoricoData(array $profile, array $post): array
     {
         return [
-            // ✅ "semana" = miércoles de corte corregido
-            'semana'         => $this->currentWeekStart(),
+            // ✅ Semana = miércoles de corte (MISMA lógica que satisfacción, incluye gracia)
+            'semana' => $this->tareaService->getSemanaCorteKey(),
             'estado'         => null,
 
             'id_user'        => (int)($profile['id_user'] ?? 0),

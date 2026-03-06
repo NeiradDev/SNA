@@ -151,6 +151,8 @@ class Reporte extends BaseController
         $idUser = (int) session()->get('id_user');
 
         $perfil       = $this->service->getUserProfile($idUser);
+
+        // ✅ NUEVO: División > Mi Área a cargo > Personal
         $satisfaccion = $this->tareaService->getSatisfaccionParaPlan($idUser);
 
         // 🔒 Verificar si ya completó
@@ -198,18 +200,15 @@ class Reporte extends BaseController
             ->where('t.fecha_inicio <=', $finSemana)
             ->get()->getResultArray();
 
-        $ordenesJuniors = [];
-        if ($tieneJuniors) {
-            $ordenesJuniors = $this->baseQueryTareas()
-                ->where('t.asignado_por', $idUser)
-                ->where('t.asignado_a !=', $idUser)
-                ->where('t.fecha_inicio >=', $inicioSemana)
-                ->where('t.fecha_inicio <=', $finSemana)
-                ->get()->getResultArray();
-        }
+        $ordenesJuniors = $this->baseQueryTareas()
+            ->where('t.asignado_por', $idUser)
+            ->where('t.asignado_a !=', $idUser)
+            ->where('t.fecha_inicio >=', $inicioSemana)
+            ->where('t.fecha_inicio <=', $finSemana)
+            ->get()->getResultArray();
 
         // =========================
-        // SIGUIENTE SEMANA (AQUÍ ESTÁ LA CLAVE)
+        // SIGUIENTE SEMANA
         // =========================
         $urgentesSiguiente = $this->baseQueryTareas()
             ->where('t.asignado_a', $idUser)
@@ -232,18 +231,14 @@ class Reporte extends BaseController
             ->where('t.fecha_inicio <=', $finSig)
             ->get()->getResultArray();
 
-        // ✅ ESTA ES LA VARIABLE QUE QUIERES VER EN LA VISTA
-        $ordenesJuniorsSiguiente = [];
-        if ($tieneJuniors) {
-            $ordenesJuniorsSiguiente = $this->baseQueryTareas()
-                ->where('t.asignado_por', $idUser)
-                ->where('t.asignado_a !=', $idUser)
-                ->where('t.fecha_inicio >=', $inicioSig)
-                ->where('t.fecha_inicio <=', $finSig)
-                ->get()->getResultArray();
-        }
+        $ordenesJuniorsSiguiente = $this->baseQueryTareas()
+            ->where('t.asignado_por', $idUser)
+            ->where('t.asignado_a !=', $idUser)
+            ->where('t.fecha_inicio >=', $inicioSig)
+            ->where('t.fecha_inicio <=', $finSig)
+            ->get()->getResultArray();
 
-        // Formateo fechas (para que la vista use igual estilo)
+        // Formatear fechas
         $urgentes             = $this->formatearFechas($urgentes);
         $pendientes           = $this->formatearFechas($pendientes);
         $ordenesMias          = $this->formatearFechas($ordenesMias);
@@ -254,38 +249,25 @@ class Reporte extends BaseController
         $ordenesMiasSiguiente    = $this->formatearFechas($ordenesMiasSiguiente);
         $ordenesJuniorsSiguiente = $this->formatearFechas($ordenesJuniorsSiguiente);
 
-        // ✅ Enviar TODO a la vista
         return view('reporte/plan', [
-            'perfil'                 => $perfil,
-            'satisfaccion'           => $satisfaccion,
+            'perfil' => $perfil,
+            'satisfaccion' => $satisfaccion,
+            'planCompletado' => $planCompletado,
+            'proximoMiercoles' => $proximoMiercoles,
+            'tieneJuniors' => $tieneJuniors,
 
-            'tieneJuniors'           => $tieneJuniors,
+            'urgentes' => $urgentes,
+            'pendientes' => $pendientes,
+            'ordenesMias' => $ordenesMias,
+            'ordenesJuniors' => $ordenesJuniors,
 
-            // Semana actual
-            'urgentes'               => $urgentes,
-            'pendientes'             => $pendientes,
-            'ordenesMias'            => $ordenesMias,
-            'ordenesJuniors'         => $ordenesJuniors,
-            'semana'                 => $semana,
-
-            // Semana siguiente
-            'urgentesSiguiente'       => $urgentesSiguiente,
-            'pendientesSiguiente'     => $pendientesSiguiente,
-            'ordenesMiasSiguiente'    => $ordenesMiasSiguiente,
-
-            // ✅ ESTA ES LA QUE TE FALTABA
+            'urgentesSiguiente' => $urgentesSiguiente,
+            'pendientesSiguiente' => $pendientesSiguiente,
+            'ordenesMiasSiguiente' => $ordenesMiasSiguiente,
             'ordenesJuniorsSiguiente' => $ordenesJuniorsSiguiente,
-            'semanaSiguiente'         => $semanaSiguiente,
-
-            // Control de bloqueo
-            'planCompletado'         => $planCompletado,
-            'proximoMiercoles'       => $proximoMiercoles
         ]);
     }
 
-    // =====================================================
-    // GUARDAR PLAN
-    // =====================================================
     public function storePlan()
     {
         if (!session()->get('logged_in')) {

@@ -685,29 +685,33 @@ SQL;
 
         return $this->fetchAll($sql, [$areaId, $excludeUserId, $excludeUserId]);
     }
-public function completado()
+
+public function getUserCargos(int $userId): array
+{
+    return $this->db->query("
+        SELECT c.nombre_cargo
+        FROM usuario_cargo uc
+        JOIN cargo c ON c.id_cargo = uc.id_cargo
+        WHERE uc.id_user = ?
+    ", [$userId])->getResultArray();
+}
+    public function completado()
 {
     $db = \Config\Database::connect();
 
-    // Obtener el ancla (miércoles de la semana actual) como DATE
-    $anchor = $db->query("
-        SELECT (date_trunc('week', CURRENT_DATE) + interval '2 days')::date AS w
-    ")->getRow()->w;
-
     $sql = "
-    SELECT u.*
-    FROM \"USER\" u
-    WHERE u.activo = true
-    AND NOT EXISTS (
-        SELECT 1
-        FROM historico h
-        WHERE h.id_user = u.id_user
-            AND h.semana = (
-                date_trunc('week', current_date)::date + interval '2 days'
-            )
-    );
+        SELECT u.*
+        FROM \"USER\" u
+        WHERE u.activo = true
+        AND NOT EXISTS (
+            SELECT 1
+            FROM historico h
+            WHERE h.id_user = u.id_user
+            AND h.semana = date_trunc('week', CURRENT_DATE) + interval '2 days'
+        )
     ";
 
-    return $db->query($sql, ['anchor' => $anchor])->getResult();
+    return $db->query($sql)->getResult();
 }
+
 }

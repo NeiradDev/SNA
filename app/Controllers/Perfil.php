@@ -205,7 +205,7 @@ class Perfil extends BaseController
         }
 
         // =========================================================
-        // Guardar cambios
+        // Guardar cambios del perfil
         // =========================================================
         $ok = $usuarioModel->update($idUser, $updateData);
 

@@ -13,7 +13,7 @@
  * - Correo separado en usuario + dominio
  * - Dominio por defecto @bestpc.ec
  * - Checkbox para habilitar otros dominios
- * - Checkbox para mostrar/ocultar cambio de contraseña
+ * - Checkbox para mostrar/ocultar cambio de contraseña ojo
  * =========================================================
  */
 

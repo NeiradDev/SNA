@@ -1,19 +1,5 @@
 <?php
 
-/**
- * =========================================================
- * Vista: layouts/partials/sidebar2.php
- * =========================================================
- * Sidebar principal del sistema.
- *
- * Esta versión:
- * - usa $menuAllowed para mostrar u ocultar módulos
- * - mantiene el header superior
- * - agrega la opción "Permisos" dentro de Mantenimiento
- * - mantiene el control dinámico de Plan de Batalla
- * =========================================================
- */
-
 /* ===============================
    PERFIL DESDE SESIÓN
 =================================*/
@@ -66,28 +52,28 @@ if (!function_exists('sidebar_has_permission')) {
   <div class="right">
     <?php if (sidebar_has_permission($permissions, 'tareas.satisfaccion') || (int) session()->get('id_cargo') === 1): ?>
       <a href="<?= base_url('tareas/satisfaccion') ?>">
-        <img src="<?= base_url('assets/img/icons/porcentaje.svg') ?>" alt="satisfaccion">
+        <img src="<?= base_url('assets/img/icons/browse-svgrepo-com.svg') ?>" alt="satisfaccion">
         <span class="text-mini">Satisfacción</span>
       </a>
     <?php endif; ?>
 
     <?php if (sidebar_has_permission($permissions, 'tareas.calendario') || (int) session()->get('id_cargo') === 1): ?>
       <a href="<?= base_url('tareas/calendario') ?>">
-        <img src="<?= base_url('assets/img/icons/calendario.svg') ?>" alt="calendario">
+        <img src="<?= base_url('assets/img/icons/calendario2.svg') ?>" alt="calendario">
         <span class="text-mini">Calendario</span>
       </a>
     <?php endif; ?>
 
     <?php if (sidebar_has_permission($permissions, 'tareas.gestionar') || (int) session()->get('id_cargo') === 1): ?>
       <a href="<?= base_url('tareas/gestionar') ?>">
-        <img src="<?= base_url('assets/img/icons/actividades.svg') ?>" alt="actividades">
+        <img src="<?= base_url('assets/img/icons/actividades2.svg') ?>" alt="actividades">
         <span class="text-mini">Actividades</span>
       </a>
     <?php endif; ?>
 
     <?php if (sidebar_has_permission($permissions, 'perfil.ver') || (int) session()->get('id_cargo') === 1): ?>
       <a href="<?= base_url('perfil') ?>">
-        <img src="<?= base_url('assets/img/icons/perfil.svg') ?>" alt="perfil">
+        <img src="<?= base_url('assets/img/icons/user-svgrepo-com.svg') ?>" alt="perfil">
         <span class="text-mini"><?= esc($labelPerfil) ?></span>
       </a>
     <?php endif; ?>
@@ -155,7 +141,7 @@ if (!function_exists('sidebar_has_permission')) {
       <?php if (!empty($menuAllowed['division'])): ?>
         <li>
           <a href="<?= base_url('division') ?>">
-            <img src="<?= base_url('assets/img/icons/division.svg') ?>" alt="division">
+            <img src="<?= base_url('assets/img/icons/information-svgrepo-com.svg') ?>" alt="division">
             <span>División</span>
           </a>
         </li>
@@ -167,7 +153,7 @@ if (!function_exists('sidebar_has_permission')) {
       <?php if (!empty($menuAllowed['planificacion'])): ?>
         <li class="has-sub">
           <a href="#" class="toggle">
-            <img src="<?= base_url('assets/img/icons/planificacion.svg') ?>" alt="planificacion">
+            <img src="<?= base_url('assets/img/icons/inspiration-svgrepo-com.svg') ?>" alt="planificacion">
             <span>Planificación</span>
             <span class="arrow"></span>
           </a>
@@ -186,7 +172,7 @@ if (!function_exists('sidebar_has_permission')) {
       <?php if (!empty($menuAllowed['usuarios'])): ?>
         <li>
           <a href="<?= base_url('usuarios') ?>">
-            <img src="<?= base_url('assets/img/icons/users.svg') ?>" alt="usuarios">
+            <img src="<?= base_url('assets/img/icons/table-of-contents-svgrepo-com.svg') ?>" alt="usuarios">
             <span>Usuarios</span>
           </a>
         </li>
@@ -198,7 +184,7 @@ if (!function_exists('sidebar_has_permission')) {
       <?php if (!empty($menuAllowed['mantenimiento'])): ?>
         <li class="has-sub">
           <a href="#" class="toggle">
-            <img src="<?= base_url('assets/img/icons/settings.svg') ?>" alt="mantenimiento">
+            <img src="<?= base_url('assets/img/icons/set-up-svgrepo-com.svg') ?>" alt="mantenimiento">
             <span>Mantenimiento</span>
             <span class="arrow"></span>
           </a>

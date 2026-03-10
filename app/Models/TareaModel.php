@@ -5,6 +5,7 @@ namespace App\Models;
 use CodeIgniter\Model;
 use Config\Database;
 
+
 /**
  * TareaModel
  *

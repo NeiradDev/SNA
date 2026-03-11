@@ -255,7 +255,19 @@ class TareaService
             return false;
         }
     }
-
+    /**
+     * =========================================================
+     * HELPERS: TAREAS CERRADAS
+     * =========================================================
+     */
+    private function isClosedEstado(int $estadoId): bool
+    {
+        return in_array($estadoId, [
+            $this->estadoRealizada,
+            $this->estadoNoRealizada,
+            $this->estadoCancelada,
+        ], true);
+    }
     /**
      * Atajo: columna en public.tareas
      */
@@ -1903,289 +1915,294 @@ SQL;
     // GESTIÓN (mis tareas / asignadas / equipo / revisión)
     // ==================================================
     public function getTasksForManagement(int $idUser, ?int $currentUserAreaId = null): array
-{
-    // ==================================================
-    // 0) Contexto del usuario actual
-    // ==================================================
-    if ($currentUserAreaId === null) {
-        $currentUserAreaId = (int) (session()->get('id_area') ?? 0);
-    }
-
-    // ==================================================
-    // 0.1) Auto-marcar vencidas como No realizada
-    // ==================================================
-    $expiredUpdated = $this->markExpiredTasksAsNoRealizada();
-
-    // ==================================================
-    // 1) Scope real del usuario logueado
-    // ==================================================
-    $scope = $this->resolveAssignScope($idUser, $currentUserAreaId);
-
-    // ==================================================
-    // 2) Usuarios del equipo según scope
-    // ==================================================
-    $teamUserIds = $this->getTeamUserIdsFromScope($scope, $idUser);
-
-    $db = Database::connect();
-
-    // ==================================================
-    // 3) Detectar si existen columnas del flujo de revisión
-    // ==================================================
-    $hasReviewCols = $this->hasReviewFlowColumns();
-    $hasExtendedReviewCols = method_exists($this, 'hasExtendedReviewColumns')
-        ? $this->hasExtendedReviewColumns()
-        : false;
-
-    /**
-     * ==================================================
-     * Helper: Builder base con SELECT + JOINs
-     * ==================================================
-     */
-    $baseSelect = function () use ($db, $hasReviewCols, $hasExtendedReviewCols) {
-        $b = $db->table('public.tareas t');
-
-        // --------------------------------------------------
-        // Campos base
-        // --------------------------------------------------
-        $select = [
-            't.id_tarea',
-            't.titulo',
-            't.descripcion',
-            't.fecha_inicio',
-            't.fecha_fin',
-
-            // ✅ NUEVO: para detectar tareas repetidas/serie
-            't.batch_uid',
-            't.recurrence_uid',
-
-            't.id_estado_tarea',
-            't.asignado_a',
-            't.asignado_por',
-            't.id_area',
-            'p.nombre_prioridad',
-            'e.nombre_estado',
-            'ar.nombre_area',
-            'ar.id_division',
-            'ua.nombres || \' \' || ua.apellidos AS asignado_a_nombre',
-            'up.nombres || \' \' || up.apellidos AS asignado_por_nombre',
-            'ua.id_supervisor AS asignado_a_supervisor',
-        ];
-
-        // --------------------------------------------------
-        // Campos del flujo de revisión base
-        // --------------------------------------------------
-        if ($hasReviewCols) {
-            $select[] = 't.edit_count';
-            $select[] = 't.review_requested_state';
-            $select[] = 't.review_requested_at';
-            $select[] = 'er.nombre_estado AS nombre_estado_solicitado';
-        } else {
-            $select[] = '0 AS edit_count';
-            $select[] = 'NULL::int AS review_requested_state';
-            $select[] = 'NULL::timestamp AS review_requested_at';
-            $select[] = 'NULL::text AS nombre_estado_solicitado';
+    {
+        // ==================================================
+        // 0) Contexto del usuario actual
+        // ==================================================
+        if ($currentUserAreaId === null) {
+            $currentUserAreaId = (int) (session()->get('id_area') ?? 0);
         }
 
-        // --------------------------------------------------
-        // Campos extendidos del flujo de revisión
-        // --------------------------------------------------
-        if ($hasExtendedReviewCols) {
-            $select[] = 't.review_action';
-            $select[] = 't.review_reason';
-            $select[] = 't.review_requested_fecha_fin';
-            $select[] = 't.review_requested_by';
-            $select[] = 'ur.nombres || \' \' || ur.apellidos AS review_requested_by_nombre';
-            $select[] = 't.review_previous_state';
-            $select[] = 'ep.nombre_estado AS nombre_estado_anterior';
-        } else {
-            $select[] = 'NULL::text AS review_action';
-            $select[] = 'NULL::text AS review_reason';
-            $select[] = 'NULL::timestamp AS review_requested_fecha_fin';
-            $select[] = 'NULL::int AS review_requested_by';
-            $select[] = 'NULL::text AS review_requested_by_nombre';
-            $select[] = 'NULL::int AS review_previous_state';
-            $select[] = 'NULL::text AS nombre_estado_anterior';
-        }
+        // ==================================================
+        // 0.1) Auto-marcar vencidas como No realizada
+        // ==================================================
+        $expiredUpdated = $this->markExpiredTasksAsNoRealizada();
 
-        $b->select($select, false);
+        // ==================================================
+        // 1) Scope real del usuario logueado
+        // ==================================================
+        $scope = $this->resolveAssignScope($idUser, $currentUserAreaId);
 
-        // --------------------------------------------------
-        // Joins base
-        // --------------------------------------------------
-        $b->join('public.prioridad p', 'p.id_prioridad = t.id_prioridad');
-        $b->join('public.estado_tarea e', 'e.id_estado_tarea = t.id_estado_tarea');
-        $b->join('public.area ar', 'ar.id_area = t.id_area', 'left');
-        $b->join('public."USER" ua', 'ua.id_user = t.asignado_a', 'left');
-        $b->join('public."USER" up', 'up.id_user = t.asignado_por', 'left');
+        // ==================================================
+        // 2) Usuarios del equipo según scope
+        // ==================================================
+        $teamUserIds = $this->getTeamUserIdsFromScope($scope, $idUser);
 
-        // Estado solicitado
-        if ($hasReviewCols) {
-            $b->join('public.estado_tarea er', 'er.id_estado_tarea = t.review_requested_state', 'left');
-        }
+        $db = Database::connect();
 
-        // Usuario que solicitó la revisión
-        if ($hasExtendedReviewCols) {
-            $b->join('public."USER" ur', 'ur.id_user = t.review_requested_by', 'left');
-            $b->join('public.estado_tarea ep', 'ep.id_estado_tarea = t.review_previous_state', 'left');
-        }
+        // ==================================================
+        // 3) Detectar si existen columnas del flujo de revisión
+        // ==================================================
+        $hasReviewCols = $this->hasReviewFlowColumns();
+        $hasExtendedReviewCols = method_exists($this, 'hasExtendedReviewColumns')
+            ? $this->hasExtendedReviewColumns()
+            : false;
 
-        return $b;
-    };
+        /**
+         * ==================================================
+         * Helper: Builder base con SELECT + JOINs
+         * ==================================================
+         */
+        $baseSelect = function () use ($db, $hasReviewCols, $hasExtendedReviewCols) {
+            $b = $db->table('public.tareas t');
 
-    // ==================================================
-    // 4) Mis tareas
-    // ==================================================
-    $misTareas = $baseSelect()
-        ->where('t.asignado_a', $idUser)
-        ->orderBy('t.fecha_inicio', 'DESC')
-        ->get()
-        ->getResultArray();
+            // --------------------------------------------------
+            // Campos base
+            // --------------------------------------------------
+            $select = [
+                't.id_tarea',
+                't.titulo',
+                't.descripcion',
+                't.fecha_inicio',
+                't.fecha_fin',
 
-    // ==================================================
-    // 4.1) ✅ Mis tareas diarias (SOLO repetidas del día)
-    // ==================================================
-    $misDiarias = [
-        'activas'  => [],
-        'revision' => [],
-        'cerradas' => [],
-    ];
+                // ✅ NUEVO: para detectar tareas repetidas/serie
+                't.batch_uid',
+                't.recurrence_uid',
 
-    // Rango HOY en TZ del sistema (America/Guayaquil)
-    $todayStart = (new \DateTimeImmutable('now', $this->tz()))->setTime(0, 0, 0);
-    $todayEnd   = (new \DateTimeImmutable('now', $this->tz()))->setTime(23, 59, 59);
+                // ✅ NUEVO: evidencia
+                't.has_evidence',
+                't.evidence_url',
+                't.evidence_note',
 
-    foreach ($misTareas as $t) {
+                't.id_estado_tarea',
+                't.asignado_a',
+                't.asignado_por',
+                't.id_area',
+                'p.nombre_prioridad',
+                'e.nombre_estado',
+                'ar.nombre_area',
+                'ar.id_division',
+                'ua.nombres || \' \' || ua.apellidos AS asignado_a_nombre',
+                'up.nombres || \' \' || up.apellidos AS asignado_por_nombre',
+                'ua.id_supervisor AS asignado_a_supervisor',
+            ];
 
-        // ✅ 1) Debe ser tarea repetida/serie
-        $recUid = trim((string)($t['recurrence_uid'] ?? ''));
-        $batUid = trim((string)($t['batch_uid'] ?? ''));
-
-        if ($recUid === '' && $batUid === '') {
-            continue;
-        }
-
-        // ✅ 2) Debe caer HOY por fecha_inicio
-        $rawStart = (string)($t['fecha_inicio'] ?? '');
-        if ($rawStart === '') {
-            continue;
-        }
-
-        try {
-            // Viene como timestamptz: "2026-03-03 08:00:00-05"
-            $startDt = new \DateTimeImmutable($rawStart);
-        } catch (\Throwable $e) {
-            continue;
-        }
-
-        if ($startDt < $todayStart || $startDt > $todayEnd) {
-            continue;
-        }
-
-        // ✅ 3) Clasificación por estado (según tus IDs)
-        $estado = (int)($t['id_estado_tarea'] ?? 0);
-
-        // Activas: Pendiente (1) o En proceso (2)
-        if (in_array($estado, [$this->estadoPendiente, $this->estadoEnProceso], true)) {
-            $misDiarias['activas'][] = $t;
-            continue;
-        }
-
-        // En revisión: (6)
-        if ($estado === $this->estadoEnRevision) {
-            $misDiarias['revision'][] = $t;
-            continue;
-        }
-
-        // Cerradas: Realizada (3) / No realizada (4) / Cancelada (5)
-        $misDiarias['cerradas'][] = $t;
-    }
-
-    // ==================================================
-    // 5) Tareas asignadas por mí
-    // ==================================================
-    $tareasAsignadas = $baseSelect()
-        ->where('t.asignado_por', $idUser)
-        ->where('t.asignado_a <>', $idUser)
-        ->orderBy('t.fecha_inicio', 'DESC')
-        ->get()
-        ->getResultArray();
-
-    // ==================================================
-    // 6) Tareas de mi equipo
-    // ==================================================
-    $tareasEquipo = [];
-
-    if (!empty($teamUserIds)) {
-        $b = $baseSelect()
-            ->whereIn('t.asignado_a', $teamUserIds);
-
-        if (($scope['mode'] ?? '') === 'area') {
-            $areaId = (int) ($scope['areaId'] ?? 0);
-            if ($areaId > 0) {
-                $b->where('t.id_area', $areaId);
+            // --------------------------------------------------
+            // Campos del flujo de revisión base
+            // --------------------------------------------------
+            if ($hasReviewCols) {
+                $select[] = 't.edit_count';
+                $select[] = 't.review_requested_state';
+                $select[] = 't.review_requested_at';
+                $select[] = 'er.nombre_estado AS nombre_estado_solicitado';
+            } else {
+                $select[] = '0 AS edit_count';
+                $select[] = 'NULL::int AS review_requested_state';
+                $select[] = 'NULL::timestamp AS review_requested_at';
+                $select[] = 'NULL::text AS nombre_estado_solicitado';
             }
-        }
 
-        if (($scope['mode'] ?? '') === 'division') {
-            $divisionId = (int) ($scope['divisionId'] ?? 0);
-            if ($divisionId > 0) {
-                $b->where('ar.id_division', $divisionId);
+            // --------------------------------------------------
+            // Campos extendidos del flujo de revisión
+            // --------------------------------------------------
+            if ($hasExtendedReviewCols) {
+                $select[] = 't.review_action';
+                $select[] = 't.review_reason';
+                $select[] = 't.review_requested_fecha_fin';
+                $select[] = 't.review_requested_by';
+                $select[] = 'ur.nombres || \' \' || ur.apellidos AS review_requested_by_nombre';
+                $select[] = 't.review_previous_state';
+                $select[] = 'ep.nombre_estado AS nombre_estado_anterior';
+            } else {
+                $select[] = 'NULL::text AS review_action';
+                $select[] = 'NULL::text AS review_reason';
+                $select[] = 'NULL::timestamp AS review_requested_fecha_fin';
+                $select[] = 'NULL::int AS review_requested_by';
+                $select[] = 'NULL::text AS review_requested_by_nombre';
+                $select[] = 'NULL::int AS review_previous_state';
+                $select[] = 'NULL::text AS nombre_estado_anterior';
             }
-        }
 
-        $tareasEquipo = $b
+            $b->select($select, false);
+
+            // --------------------------------------------------
+            // Joins base
+            // --------------------------------------------------
+            $b->join('public.prioridad p', 'p.id_prioridad = t.id_prioridad');
+            $b->join('public.estado_tarea e', 'e.id_estado_tarea = t.id_estado_tarea');
+            $b->join('public.area ar', 'ar.id_area = t.id_area', 'left');
+            $b->join('public."USER" ua', 'ua.id_user = t.asignado_a', 'left');
+            $b->join('public."USER" up', 'up.id_user = t.asignado_por', 'left');
+
+            // Estado solicitado
+            if ($hasReviewCols) {
+                $b->join('public.estado_tarea er', 'er.id_estado_tarea = t.review_requested_state', 'left');
+            }
+
+            // Usuario que solicitó la revisión
+            if ($hasExtendedReviewCols) {
+                $b->join('public."USER" ur', 'ur.id_user = t.review_requested_by', 'left');
+                $b->join('public.estado_tarea ep', 'ep.id_estado_tarea = t.review_previous_state', 'left');
+            }
+
+            return $b;
+        };
+
+        // ==================================================
+        // 4) Mis tareas
+        // ==================================================
+        $misTareas = $baseSelect()
+            ->where('t.asignado_a', $idUser)
             ->orderBy('t.fecha_inicio', 'DESC')
             ->get()
             ->getResultArray();
-    }
 
-    // ==================================================
-    // 7) Pendientes de revisión
-    // ==================================================
-    $pendientesRevision = [];
+        // ==================================================
+        // 4.1) ✅ Mis tareas diarias (SOLO repetidas del día)
+        // ==================================================
+        $misDiarias = [
+            'activas'  => [],
+            'revision' => [],
+            'cerradas' => [],
+        ];
 
-    if ($hasReviewCols) {
-        $pendientesBuilder = $baseSelect()
-            ->where('t.id_estado_tarea', $this->estadoEnRevision);
+        // Rango HOY en TZ del sistema (America/Guayaquil)
+        $todayStart = (new \DateTimeImmutable('now', $this->tz()))->setTime(0, 0, 0);
+        $todayEnd   = (new \DateTimeImmutable('now', $this->tz()))->setTime(23, 59, 59);
 
-        // --------------------------------------------------
-        // REGLA NUEVA:
-        // - super ve todo
-        // - los demás solo ven solicitudes de sus subordinados directos
-        // --------------------------------------------------
-        if (($scope['mode'] ?? '') !== 'super') {
-            $pendientesBuilder->where('ua.id_supervisor', $idUser);
+        foreach ($misTareas as $t) {
+
+            // ✅ 1) Debe ser tarea repetida/serie
+            $recUid = trim((string)($t['recurrence_uid'] ?? ''));
+            $batUid = trim((string)($t['batch_uid'] ?? ''));
+
+            if ($recUid === '' && $batUid === '') {
+                continue;
+            }
+
+            // ✅ 2) Debe caer HOY por fecha_inicio
+            $rawStart = (string)($t['fecha_inicio'] ?? '');
+            if ($rawStart === '') {
+                continue;
+            }
+
+            try {
+                // Viene como timestamptz: "2026-03-03 08:00:00-05"
+                $startDt = new \DateTimeImmutable($rawStart);
+            } catch (\Throwable $e) {
+                continue;
+            }
+
+            if ($startDt < $todayStart || $startDt > $todayEnd) {
+                continue;
+            }
+
+            // ✅ 3) Clasificación por estado (según tus IDs)
+            $estado = (int)($t['id_estado_tarea'] ?? 0);
+
+            // Activas: Pendiente (1) o En proceso (2)
+            if (in_array($estado, [$this->estadoPendiente, $this->estadoEnProceso], true)) {
+                $misDiarias['activas'][] = $t;
+                continue;
+            }
+
+            // En revisión: (6)
+            if ($estado === $this->estadoEnRevision) {
+                $misDiarias['revision'][] = $t;
+                continue;
+            }
+
+            // Cerradas: Realizada (3) / No realizada (4) / Cancelada (5)
+            $misDiarias['cerradas'][] = $t;
         }
 
-        $pendientesRevision = $pendientesBuilder
-            ->orderBy('t.review_requested_at', 'DESC')
+        // ==================================================
+        // 5) Tareas asignadas por mí
+        // ==================================================
+        $tareasAsignadas = $baseSelect()
+            ->where('t.asignado_por', $idUser)
+            ->where('t.asignado_a <>', $idUser)
+            ->orderBy('t.fecha_inicio', 'DESC')
             ->get()
             ->getResultArray();
+
+        // ==================================================
+        // 6) Tareas de mi equipo
+        // ==================================================
+        $tareasEquipo = [];
+
+        if (!empty($teamUserIds)) {
+            $b = $baseSelect()
+                ->whereIn('t.asignado_a', $teamUserIds);
+
+            if (($scope['mode'] ?? '') === 'area') {
+                $areaId = (int) ($scope['areaId'] ?? 0);
+                if ($areaId > 0) {
+                    $b->where('t.id_area', $areaId);
+                }
+            }
+
+            if (($scope['mode'] ?? '') === 'division') {
+                $divisionId = (int) ($scope['divisionId'] ?? 0);
+                if ($divisionId > 0) {
+                    $b->where('ar.id_division', $divisionId);
+                }
+            }
+
+            $tareasEquipo = $b
+                ->orderBy('t.fecha_inicio', 'DESC')
+                ->get()
+                ->getResultArray();
+        }
+
+        // ==================================================
+        // 7) Pendientes de revisión
+        // ==================================================
+        $pendientesRevision = [];
+
+        if ($hasReviewCols) {
+            $pendientesBuilder = $baseSelect()
+                ->where('t.id_estado_tarea', $this->estadoEnRevision);
+
+            // --------------------------------------------------
+            // REGLA NUEVA:
+            // - super ve todo
+            // - los demás solo ven solicitudes de sus subordinados directos
+            // --------------------------------------------------
+            if (($scope['mode'] ?? '') !== 'super') {
+                $pendientesBuilder->where('ua.id_supervisor', $idUser);
+            }
+
+            $pendientesRevision = $pendientesBuilder
+                ->orderBy('t.review_requested_at', 'DESC')
+                ->get()
+                ->getResultArray();
+        }
+
+        // ==================================================
+        // 8) Alertas de vencimiento
+        // ==================================================
+        $dueAlerts = $this->buildDueAlertsForTasks($misTareas, $idUser);
+
+        // ==================================================
+        // 9) Respuesta
+        // ==================================================
+        return [
+            'assignScope'        => $scope,
+            'misTareas'          => $misTareas,
+
+            // ✅ NUEVO
+            'misDiarias'         => $misDiarias,
+
+            'tareasAsignadas'    => $tareasAsignadas,
+            'tareasEquipo'       => $tareasEquipo,
+            'pendientesRevision' => $pendientesRevision,
+            'hasReviewFlow'      => $hasReviewCols,
+            'expiredUpdated'     => $expiredUpdated,
+            'dueAlerts'          => $dueAlerts,
+        ];
     }
-
-    // ==================================================
-    // 8) Alertas de vencimiento
-    // ==================================================
-    $dueAlerts = $this->buildDueAlertsForTasks($misTareas, $idUser);
-
-    // ==================================================
-    // 9) Respuesta
-    // ==================================================
-    return [
-        'assignScope'        => $scope,
-        'misTareas'          => $misTareas,
-
-        // ✅ NUEVO
-        'misDiarias'         => $misDiarias,
-
-        'tareasAsignadas'    => $tareasAsignadas,
-        'tareasEquipo'       => $tareasEquipo,
-        'pendientesRevision' => $pendientesRevision,
-        'hasReviewFlow'      => $hasReviewCols,
-        'expiredUpdated'     => $expiredUpdated,
-        'dueAlerts'          => $dueAlerts,
-    ];
-}
     /**
      * Devuelve IDs subordinados según scope:
      * - super    => todos activos menos yo
@@ -2387,92 +2404,92 @@ SQL;
         return $task;
     }
 
-   /**
- * =========================================================
- * getBusinessWeekRange()
- * =========================================================
- * Semana negocio: JUEVES 00:00 → MIÉRCOLES 23:59
- * Query usa fin EXCLUSIVO: jueves siguiente 00:00
- *
- * ✅ REGLA DE GRACIA:
- * - Si HOY es JUEVES y la hora local es ANTES de 12:00,
- *   entonces la semana activa debe ser la SEMANA ANTERIOR
- *   (jueves anterior → miércoles anterior).
- *
- * Esto hace que el jueves por la mañana, al guardar/consultar,
- * se trabaje todavía con el corte del miércoles anterior.
- * =========================================================
- */
-private function getBusinessWeekRange(): array
-{
-    // -------------------------------------------------
-    // 1) "Ahora" en TZ local
-    // -------------------------------------------------
-    $now = new \DateTimeImmutable('now', $this->tz());
+    /**
+     * =========================================================
+     * getBusinessWeekRange()
+     * =========================================================
+     * Semana negocio: JUEVES 00:00 → MIÉRCOLES 23:59
+     * Query usa fin EXCLUSIVO: jueves siguiente 00:00
+     *
+     * ✅ REGLA DE GRACIA:
+     * - Si HOY es JUEVES y la hora local es ANTES de 12:00,
+     *   entonces la semana activa debe ser la SEMANA ANTERIOR
+     *   (jueves anterior → miércoles anterior).
+     *
+     * Esto hace que el jueves por la mañana, al guardar/consultar,
+     * se trabaje todavía con el corte del miércoles anterior.
+     * =========================================================
+     */
+    private function getBusinessWeekRange(): array
+    {
+        // -------------------------------------------------
+        // 1) "Ahora" en TZ local
+        // -------------------------------------------------
+        $now = new \DateTimeImmutable('now', $this->tz());
 
-    // 1=Lunes ... 7=Domingo
-    $dow = (int) $now->format('N');
+        // 1=Lunes ... 7=Domingo
+        $dow = (int) $now->format('N');
 
-    // -------------------------------------------------
-    // 2) Calcular jueves de la semana (sin gracia aún)
-    // JUEVES = 4
-    // -------------------------------------------------
-    $daysSinceThursday = ($dow >= 4) ? ($dow - 4) : ($dow + 3);
+        // -------------------------------------------------
+        // 2) Calcular jueves de la semana (sin gracia aún)
+        // JUEVES = 4
+        // -------------------------------------------------
+        $daysSinceThursday = ($dow >= 4) ? ($dow - 4) : ($dow + 3);
 
-    // Inicio jueves 00:00 (semana normal)
-    $start = $now->modify("-{$daysSinceThursday} days")->setTime(0, 0, 0);
+        // Inicio jueves 00:00 (semana normal)
+        $start = $now->modify("-{$daysSinceThursday} days")->setTime(0, 0, 0);
 
-    // -------------------------------------------------
-    // 3) ✅ REGLA DE GRACIA
-    // Si es jueves y es antes de 12:00 => usar semana anterior
-    // -------------------------------------------------
-    if ($dow === 4) {
-        $hour = (int) $now->format('H');
+        // -------------------------------------------------
+        // 3) ✅ REGLA DE GRACIA
+        // Si es jueves y es antes de 12:00 => usar semana anterior
+        // -------------------------------------------------
+        if ($dow === 4) {
+            $hour = (int) $now->format('H');
 
-        // Antes del medio día (12:00)
-        if ($hour < 12) {
-            $start = $start->modify('-7 days'); // jueves anterior 00:00
+            // Antes del medio día (12:00)
+            if ($hour < 12) {
+                $start = $start->modify('-7 days'); // jueves anterior 00:00
+            }
         }
+
+        // -------------------------------------------------
+        // 4) Fin EXCLUSIVO (jueves siguiente 00:00)
+        // -------------------------------------------------
+        $endExclusive = $start->modify('+7 days')->setTime(0, 0, 0);
+
+        // -------------------------------------------------
+        // 5) Fin visible (miércoles)
+        // -------------------------------------------------
+        $endDisplay = $start->modify('+6 days')->setTime(0, 0, 0);
+
+        // cutKey = miércoles de corte (clave para guardar en historico.semana)
+        $cutKey = $endDisplay->format('Y-m-d');
+
+        return [
+            'start'        => $start,
+            'endExclusive' => $endExclusive,
+            'inicioLabel'  => $start->format('Y-m-d'),
+            'finLabel'     => $endDisplay->format('Y-m-d'),
+
+            // ✅ NO rompe nada (key adicional)
+            'cutKey'       => $cutKey,
+        ];
     }
-
-    // -------------------------------------------------
-    // 4) Fin EXCLUSIVO (jueves siguiente 00:00)
-    // -------------------------------------------------
-    $endExclusive = $start->modify('+7 days')->setTime(0, 0, 0);
-
-    // -------------------------------------------------
-    // 5) Fin visible (miércoles)
-    // -------------------------------------------------
-    $endDisplay = $start->modify('+6 days')->setTime(0, 0, 0);
-
-    // cutKey = miércoles de corte (clave para guardar en historico.semana)
-    $cutKey = $endDisplay->format('Y-m-d');
-
-    return [
-        'start'        => $start,
-        'endExclusive' => $endExclusive,
-        'inicioLabel'  => $start->format('Y-m-d'),
-        'finLabel'     => $endDisplay->format('Y-m-d'),
-
-        // ✅ NO rompe nada (key adicional)
-        'cutKey'       => $cutKey,
-    ];
-}
-/**
- * Retorna la fecha (YYYY-mm-dd) del MIÉRCOLES de corte
- * según la semana de negocio (con regla de gracia).
- * Úsalo para GUARDAR en historico.semana.
- */
-public function getBusinessWeekRangePublic(): array
-{
-    // ✅ Llama al método privado interno (misma lógica)
-    return $this->getBusinessWeekRange();
-}
-public function getSemanaCorteKey(): string
-{
-    $range = $this->getBusinessWeekRange();
-    return (string) ($range['cutKey'] ?? $range['finLabel'] ?? '');
-}
+    /**
+     * Retorna la fecha (YYYY-mm-dd) del MIÉRCOLES de corte
+     * según la semana de negocio (con regla de gracia).
+     * Úsalo para GUARDAR en historico.semana.
+     */
+    public function getBusinessWeekRangePublic(): array
+    {
+        // ✅ Llama al método privado interno (misma lógica)
+        return $this->getBusinessWeekRange();
+    }
+    public function getSemanaCorteKey(): string
+    {
+        $range = $this->getBusinessWeekRange();
+        return (string) ($range['cutKey'] ?? $range['finLabel'] ?? '');
+    }
     private function buildWeekLabel(\DateTimeImmutable $weekStart): string
     {
         $visibleEnd = $weekStart->modify('+6 days')->setTime(0, 0, 0);
@@ -2775,62 +2792,103 @@ public function getSemanaCorteKey(): string
             return [];
         }
     }
-  public function getSatisfaccionResumen(int $idUser): array
-{
-    $range = $this->getBusinessWeekRange();
-    $start = $range['start'];
-    $endExclusive = $range['endExclusive'];
+    public function getSatisfaccionResumen(int $idUser): array
+    {
+        $range = $this->getBusinessWeekRange();
+        $start = $range['start'];
+        $endExclusive = $range['endExclusive'];
 
-    $cards = [];
+        $cards = [];
 
-    $rankingUsersByArea = [];
+        $rankingUsersByArea = [];
 
-    $divInfo = $this->getChiefDivisionInfo($idUser);
+        $divInfo = $this->getChiefDivisionInfo($idUser);
 
-    $rankingAreas = [];
+        $rankingAreas = [];
 
-    if (!empty($divInfo)) {
-        $divisionId   = (int) $divInfo['id_division'];
-        $divisionName = (string) $divInfo['nombre_division'];
+        if (!empty($divInfo)) {
+            $divisionId   = (int) $divInfo['id_division'];
+            $divisionName = (string) $divInfo['nombre_division'];
 
-        $idsDivision = $this->getUserIdsByDivision($divisionId);
+            $idsDivision = $this->getUserIdsByDivision($divisionId);
 
-        if (!in_array($idUser, $idsDivision, true)) {
-            $idsDivision[] = $idUser;
-        }
+            if (!in_array($idUser, $idsDivision, true)) {
+                $idsDivision[] = $idUser;
+            }
 
-        $dataDivision = $this->calcSatisfaccionChain(
-            $idsDivision,
-            $start,
-            $endExclusive,
-            $divisionId,
-            null
-        );
+            $dataDivision = $this->calcSatisfaccionChain(
+                $idsDivision,
+                $start,
+                $endExclusive,
+                $divisionId,
+                null
+            );
 
-        // ✅ Históricos oficiales desde public.historico_division (y fallback si faltan filas)
-        $historyDivision = $this->buildHistorySeriesFromHistorico($idsDivision, $start, $divisionId, null);
-        $avgDivision4    = $this->getLast4WeeksAverageFromHistorico($idsDivision, $start, $divisionId, null);
+            // ✅ Históricos oficiales desde public.historico_division (y fallback si faltan filas)
+            $historyDivision = $this->buildHistorySeriesFromHistorico($idsDivision, $start, $divisionId, null);
+            $avgDivision4    = $this->getLast4WeeksAverageFromHistorico($idsDivision, $start, $divisionId, null);
 
-        $cards[] = array_merge($dataDivision, [
-            'titulo'      => 'Satisfacción Global División: ' . $divisionName,
-            'scope'       => 'division',
-            'division_id' => $divisionId,
-            'avg_4_weeks' => $avgDivision4,
-            'history'     => $historyDivision,
-        ]);
+            $cards[] = array_merge($dataDivision, [
+                'titulo'      => 'Satisfacción Global División: ' . $divisionName,
+                'scope'       => 'division',
+                'division_id' => $divisionId,
+                'avg_4_weeks' => $avgDivision4,
+                'history'     => $historyDivision,
+            ]);
 
-        $rankingAreas = $this->getAreaRankingInDivision($divisionId, $start, $endExclusive);
+            $rankingAreas = $this->getAreaRankingInDivision($divisionId, $start, $endExclusive);
 
-        $db = Database::connect();
-        $areas = $db->query(
-            'SELECT id_area, nombre_area
+            $db = Database::connect();
+            $areas = $db->query(
+                'SELECT id_area, nombre_area
              FROM public.area
              WHERE id_division = ?
              ORDER BY nombre_area ASC',
-            [$divisionId]
-        )->getResultArray();
+                [$divisionId]
+            )->getResultArray();
 
-        foreach ($areas as $a) {
+            foreach ($areas as $a) {
+                $areaId   = (int) $a['id_area'];
+                $areaName = (string) $a['nombre_area'];
+
+                $idsArea = $this->getUserIdsByArea($areaId);
+
+                if (!in_array($idUser, $idsArea, true)) {
+                    $idsArea[] = $idUser;
+                }
+
+                $dataArea = $this->calcSatisfaccionChain(
+                    $idsArea,
+                    $start,
+                    $endExclusive,
+                    null,
+                    $areaId
+                );
+
+                // ✅ Históricos oficiales desde public.historico_area (y fallback si faltan filas)
+                $historyArea = $this->buildHistorySeriesFromHistorico($idsArea, $start, null, $areaId);
+                $avgArea4    = $this->getLast4WeeksAverageFromHistorico($idsArea, $start, null, $areaId);
+
+                $cards[] = array_merge($dataArea, [
+                    'titulo'      => 'Área: ' . $areaName,
+                    'scope'       => 'area',
+                    'area_id'     => $areaId,
+                    'avg_4_weeks' => $avgArea4,
+                    'history'     => $historyArea,
+                ]);
+
+                if (!isset($rankingUsersByArea[$areaId])) {
+                    $rankingUsersByArea[$areaId] = $this->getUserRankingInArea($areaId, $start, $endExclusive);
+                }
+            }
+        }
+
+        // =========================================================
+        // ✅ MI ÁREA A CARGO (FIX: usar historico_area)
+        // =========================================================
+        $areasJefe = $this->getChiefAreasInfo($idUser);
+
+        foreach ($areasJefe as $a) {
             $areaId   = (int) $a['id_area'];
             $areaName = (string) $a['nombre_area'];
 
@@ -2848,12 +2906,12 @@ public function getSemanaCorteKey(): string
                 $areaId
             );
 
-            // ✅ Históricos oficiales desde public.historico_area (y fallback si faltan filas)
+            // ✅ FIX AQUÍ: ahora también jala de public.historico_area
             $historyArea = $this->buildHistorySeriesFromHistorico($idsArea, $start, null, $areaId);
             $avgArea4    = $this->getLast4WeeksAverageFromHistorico($idsArea, $start, null, $areaId);
 
             $cards[] = array_merge($dataArea, [
-                'titulo'      => 'Área: ' . $areaName,
+                'titulo'      => 'Mi Área a cargo: ' . $areaName,
                 'scope'       => 'area',
                 'area_id'     => $areaId,
                 'avg_4_weeks' => $avgArea4,
@@ -2864,93 +2922,52 @@ public function getSemanaCorteKey(): string
                 $rankingUsersByArea[$areaId] = $this->getUserRankingInArea($areaId, $start, $endExclusive);
             }
         }
-    }
 
-    // =========================================================
-    // ✅ MI ÁREA A CARGO (FIX: usar historico_area)
-    // =========================================================
-    $areasJefe = $this->getChiefAreasInfo($idUser);
+        $personal = $this->calcSatisfaccionChain([$idUser], $start, $endExclusive, null, null);
 
-    foreach ($areasJefe as $a) {
-        $areaId   = (int) $a['id_area'];
-        $areaName = (string) $a['nombre_area'];
+        // ✅ PERSONAL: ahora jala de public.historico.satisfaccion (y fallback si falta)
+        $historyPersonal = $this->buildHistorySeriesFromHistorico([$idUser], $start, null, null);
+        $avgPersonal4    = $this->getLast4WeeksAverageFromHistorico([$idUser], $start, null, null);
 
-        $idsArea = $this->getUserIdsByArea($areaId);
-
-        if (!in_array($idUser, $idsArea, true)) {
-            $idsArea[] = $idUser;
-        }
-
-        $dataArea = $this->calcSatisfaccionChain(
-            $idsArea,
-            $start,
-            $endExclusive,
-            null,
-            $areaId
-        );
-
-        // ✅ FIX AQUÍ: ahora también jala de public.historico_area
-        $historyArea = $this->buildHistorySeriesFromHistorico($idsArea, $start, null, $areaId);
-        $avgArea4    = $this->getLast4WeeksAverageFromHistorico($idsArea, $start, null, $areaId);
-
-        $cards[] = array_merge($dataArea, [
-            'titulo'      => 'Mi Área a cargo: ' . $areaName,
-            'scope'       => 'area',
-            'area_id'     => $areaId,
-            'avg_4_weeks' => $avgArea4,
-            'history'     => $historyArea,
+        $cards[] = array_merge($personal, [
+            'titulo'      => 'Mi porcentaje de satisfacción',
+            'scope'       => 'personal',
+            'avg_4_weeks' => $avgPersonal4,
+            'history'     => $historyPersonal,
         ]);
 
-        if (!isset($rankingUsersByArea[$areaId])) {
-            $rankingUsersByArea[$areaId] = $this->getUserRankingInArea($areaId, $start, $endExclusive);
-        }
-    }
+        usort($cards, fn($a, $b) => ((float)($b['porcentaje'] ?? 0) <=> (float)($a['porcentaje'] ?? 0)));
 
-   $personal = $this->calcSatisfaccionChain([$idUser], $start, $endExclusive, null, null);
-
-// ✅ PERSONAL: ahora jala de public.historico.satisfaccion (y fallback si falta)
-$historyPersonal = $this->buildHistorySeriesFromHistorico([$idUser], $start, null, null);
-$avgPersonal4    = $this->getLast4WeeksAverageFromHistorico([$idUser], $start, null, null);
-
-    $cards[] = array_merge($personal, [
-        'titulo'      => 'Mi porcentaje de satisfacción',
-        'scope'       => 'personal',
-        'avg_4_weeks' => $avgPersonal4,
-        'history'     => $historyPersonal,
-    ]);
-
-    usort($cards, fn($a, $b) => ((float)($b['porcentaje'] ?? 0) <=> (float)($a['porcentaje'] ?? 0)));
-
-    $historyGlobal = [];
-    foreach ($cards as $c) {
-        $sc = (string) ($c['scope'] ?? '');
-        if ($sc === 'division' && !empty($c['history'])) {
-            $historyGlobal = (array) $c['history'];
-            break;
-        }
-    }
-    if (empty($historyGlobal)) {
+        $historyGlobal = [];
         foreach ($cards as $c) {
             $sc = (string) ($c['scope'] ?? '');
-            if ($sc === 'area' && !empty($c['history'])) {
+            if ($sc === 'division' && !empty($c['history'])) {
                 $historyGlobal = (array) $c['history'];
                 break;
             }
         }
-    }
-    if (empty($historyGlobal)) {
-        $historyGlobal = $historyPersonal;
-    }
+        if (empty($historyGlobal)) {
+            foreach ($cards as $c) {
+                $sc = (string) ($c['scope'] ?? '');
+                if ($sc === 'area' && !empty($c['history'])) {
+                    $historyGlobal = (array) $c['history'];
+                    break;
+                }
+            }
+        }
+        if (empty($historyGlobal)) {
+            $historyGlobal = $historyPersonal;
+        }
 
-    return [
-        'inicio' => $range['inicioLabel'],
-        'fin'    => $range['finLabel'],
-        'cards'  => $cards,
-        'ranking_areas' => $rankingAreas,
-        'ranking_users_by_area' => $rankingUsersByArea,
-        'history_global' => $historyGlobal,
-    ];
-}
+        return [
+            'inicio' => $range['inicioLabel'],
+            'fin'    => $range['finLabel'],
+            'cards'  => $cards,
+            'ranking_areas' => $rankingAreas,
+            'ranking_users_by_area' => $rankingUsersByArea,
+            'history_global' => $historyGlobal,
+        ];
+    }
     public function getSatisfaccionActual(int $idUser): array
     {
         $resumen = $this->getSatisfaccionResumen($idUser);
@@ -3320,7 +3337,10 @@ $avgPersonal4    = $this->getLast4WeeksAverageFromHistorico([$idUser], $start, n
         int $requestedEstado,
         int $currentUserId,
         int $currentUserAreaId,
-        ?string $reason = null
+        ?string $reason = null,
+        bool $hasEvidence = false,
+        ?string $evidenceUrl = null,
+        ?string $evidenceNote = null
     ): array {
 
         // ==================================================
@@ -3334,6 +3354,34 @@ $avgPersonal4    = $this->getLast4WeeksAverageFromHistorico([$idUser], $start, n
             return [
                 'success' => false,
                 'error'   => 'Faltan columnas extendidas de revisión (review_action, review_reason, review_requested_by, review_requested_fecha_fin, review_previous_state). Ejecuta el ALTER TABLE.',
+            ];
+        }
+
+        // ==================================================
+        // 0.1) Validación / normalización de evidencia
+        // ==================================================
+        $evidenceUrl  = trim((string) ($evidenceUrl ?? ''));
+        $evidenceNote = trim((string) ($evidenceNote ?? ''));
+
+        // Si no tiene evidencia, limpiamos todo
+        if (!$hasEvidence) {
+            $evidenceUrl  = '';
+            $evidenceNote = '';
+        }
+
+        // Si marcó que sí tiene evidencia, el link es obligatorio
+        if ($hasEvidence && $evidenceUrl === '') {
+            return [
+                'success' => false,
+                'error'   => 'Debes ingresar el enlace de evidencia.',
+            ];
+        }
+
+        // Validación básica de URL
+        if ($hasEvidence && !filter_var($evidenceUrl, FILTER_VALIDATE_URL)) {
+            return [
+                'success' => false,
+                'error'   => 'El enlace de evidencia no es válido.',
             ];
         }
 
@@ -3445,6 +3493,11 @@ $avgPersonal4    = $this->getLast4WeeksAverageFromHistorico([$idUser], $start, n
 
                 // todavía no cierra
                 'completed_at'               => null,
+
+                // ✅ NUEVO: evidencia
+                'has_evidence'               => $hasEvidence,
+                'evidence_url'               => ($hasEvidence ? $evidenceUrl : null),
+                'evidence_note'              => ($hasEvidence && $evidenceNote !== '' ? $evidenceNote : null),
             ];
 
             $db->table('public.tareas')
@@ -3490,6 +3543,11 @@ $avgPersonal4    = $this->getLast4WeeksAverageFromHistorico([$idUser], $start, n
                 [$this->estadoRealizada, $this->estadoNoRealizada],
                 true
             ) ? $now : null,
+
+            // ✅ NUEVO: evidencia
+            'has_evidence'               => $hasEvidence,
+            'evidence_url'               => ($hasEvidence ? $evidenceUrl : null),
+            'evidence_note'              => ($hasEvidence && $evidenceNote !== '' ? $evidenceNote : null),
         ];
 
         $db->table('public.tareas')
@@ -3882,163 +3940,128 @@ $avgPersonal4    = $this->getLast4WeeksAverageFromHistorico([$idUser], $start, n
         return ['success' => true, 'message' => 'Solicitud enviada a revisión de tu supervisor.'];
     }
     public function reviewBatch(
-        array $taskIds,
-        string $action,
-        int $currentUserId,
-        int $currentUserAreaId
-    ): array {
+    array $taskIds,
+    string $action,
+    int $currentUserId,
+    int $currentUserAreaId
+): array {
 
-        // ==================================================
-        // 0) Validaciones de columnas necesarias
-        // ==================================================
-        if (!$this->hasReviewFlowColumns()) {
-            return $this->reviewColumnsMissingError();
+    // ==================================================
+    // 0) Validaciones de columnas necesarias
+    // ==================================================
+    if (!$this->hasReviewFlowColumns()) {
+        return $this->reviewColumnsMissingError();
+    }
+
+    if (method_exists($this, 'hasExtendedReviewColumns') && !$this->hasExtendedReviewColumns()) {
+        return [
+            'success' => false,
+            'error'   => 'Faltan columnas extendidas de revisión (review_action, review_reason, review_requested_by, review_requested_fecha_fin, review_previous_state). Ejecuta el ALTER TABLE.',
+        ];
+    }
+
+    // ==================================================
+    // 1) Normalizar IDs
+    // ==================================================
+    $clean = [];
+    foreach ($taskIds as $id) {
+        $n = (int) $id;
+        if ($n > 0) {
+            $clean[] = $n;
         }
+    }
+    $clean = array_values(array_unique($clean));
 
-        if (method_exists($this, 'hasExtendedReviewColumns') && !$this->hasExtendedReviewColumns()) {
-            return [
-                'success' => false,
-                'error'   => 'Faltan columnas extendidas de revisión (review_action, review_reason, review_requested_by, review_requested_fecha_fin, review_previous_state). Ejecuta el ALTER TABLE.',
-            ];
-        }
+    if (empty($clean)) {
+        return ['success' => false, 'error' => 'No seleccionaste tareas.'];
+    }
 
-        // ==================================================
-        // 1) Normalizar IDs
-        // ==================================================
-        $clean = [];
-        foreach ($taskIds as $id) {
-            $n = (int) $id;
-            if ($n > 0) $clean[] = $n;
-        }
-        $clean = array_values(array_unique($clean));
+    // ==================================================
+    // 2) Validar acción
+    // ==================================================
+    if (!in_array($action, ['approve', 'reject'], true)) {
+        return ['success' => false, 'error' => 'Acción inválida.'];
+    }
 
-        if (empty($clean)) {
-            return ['success' => false, 'error' => 'No seleccionaste tareas.'];
-        }
+    // ==================================================
+    // 3) Scope para detectar gerencia
+    // ==================================================
+    $scope = $this->resolveAssignScope($currentUserId, $currentUserAreaId);
 
-        // ==================================================
-        // 2) Validar acción
-        // ==================================================
-        if (!in_array($action, ['approve', 'reject'], true)) {
-            return ['success' => false, 'error' => 'Acción inválida.'];
-        }
+    $db  = Database::connect();
+    $now = (new \DateTimeImmutable('now', $this->tz()))->format('Y-m-d H:i:s');
 
-        // ==================================================
-        // 3) Scope solo para detectar GERENCIA (super)
-        // ==================================================
-        $scope = $this->resolveAssignScope($currentUserId, $currentUserAreaId);
+    // ==================================================
+    // 4) Transacción
+    // ==================================================
+    $db->transStart();
 
-        $db  = Database::connect();
-        $now = (new \DateTimeImmutable('now', $this->tz()))->format('Y-m-d H:i:s');
+    try {
+        foreach ($clean as $taskId) {
 
-        // ==================================================
-        // 4) Transacción
-        // ==================================================
-        $db->transStart();
+            // --------------------------------------------------
+            // 4.1) Cargar tarea
+            // --------------------------------------------------
+            $task = $this->tareaModel->find((int) $taskId);
+            if (!$task) {
+                continue;
+            }
 
-        try {
+            // Solo procesamos si está en revisión
+            if ((int)($task['id_estado_tarea'] ?? 0) !== $this->estadoEnRevision) {
+                continue;
+            }
 
-            foreach ($clean as $taskId) {
+            // --------------------------------------------------
+            // 4.2) Permisos: SOLO supervisor directo o super
+            // --------------------------------------------------
+            $asignadoA = (int) ($task['asignado_a'] ?? 0);
 
-                // --------------------------------------------------
-                // 4.1) Cargar tarea
-                // --------------------------------------------------
-                $task = $this->tareaModel->find((int) $taskId);
-                if (!$task) continue;
-
-                // Solo procesamos si está En revisión
-                if ((int)($task['id_estado_tarea'] ?? 0) !== $this->estadoEnRevision) {
-                    continue;
-                }
-
-                // --------------------------------------------------
-                // 4.2) Permisos: SOLO supervisor directo o super
-                // --------------------------------------------------
-                $asignadoA = (int) ($task['asignado_a'] ?? 0);
-
-                $rowSup = $db->query(
-                    'SELECT id_supervisor
+            $rowSup = $db->query(
+                'SELECT id_supervisor
                  FROM public."USER"
                  WHERE id_user = ?
                  LIMIT 1',
-                    [$asignadoA]
-                )->getRowArray();
+                [$asignadoA]
+            )->getRowArray();
 
-                $assignedSupervisorId = (int) ($rowSup['id_supervisor'] ?? 0);
+            $assignedSupervisorId = (int) ($rowSup['id_supervisor'] ?? 0);
 
-                $isDirectSupervisor = ($assignedSupervisorId > 0 && $assignedSupervisorId === $currentUserId);
-                $isSuperUser        = (($scope['mode'] ?? '') === 'super');
+            $isDirectSupervisor = ($assignedSupervisorId > 0 && $assignedSupervisorId === $currentUserId);
+            $isSuperUser        = (($scope['mode'] ?? '') === 'super');
 
-                if (!$isDirectSupervisor && !$isSuperUser) {
-                    continue;
-                }
+            if (!$isDirectSupervisor && !$isSuperUser) {
+                continue;
+            }
+
+            // --------------------------------------------------
+            // 4.3) Datos de revisión
+            // --------------------------------------------------
+            $reviewAction = trim((string) ($task['review_action'] ?? ''));
+            $prevState    = (int) ($task['review_previous_state'] ?? 0);
+
+            if ($prevState <= 0) {
+                $prevState = $this->estadoEnProceso;
+            }
+
+            $requestedBy = (int)($task['review_requested_by'] ?? 0);
+            $decision    = ($action === 'reject') ? 'rejected' : 'approved';
+
+            // ==================================================
+            // 4.4) RECHAZAR
+            // ==================================================
+            if ($action === 'reject') {
 
                 // --------------------------------------------------
-                // 4.3) Datos de revisión
+                // Rechazo de cancelación / cambio de fecha
+                // => volver al estado previo
                 // --------------------------------------------------
-                $reviewAction = (string) ($task['review_action'] ?? ''); // 'date_change' | 'cancel' | ...
-                $prevState    = (int) ($task['review_previous_state'] ?? 0);
-                if ($prevState <= 0) $prevState = $this->estadoEnProceso;
+                if (in_array($reviewAction, ['cancel', 'date_change'], true)) {
 
-                // ==================================================
-                // 4.4) RECHAZAR
-                // ==================================================
-                if ($action === 'reject') {
-
-                    // Si era cancel/date_change => volver a estado previo
-                    if (in_array($reviewAction, ['cancel', 'date_change'], true)) {
-
-                        $payload = [
-                            'id_estado_tarea'            => $prevState,
-
-                            // Limpieza revisión
-                            'review_requested_state'     => null,
-                            'review_requested_at'        => null,
-                            'review_action'              => null,
-                            'review_reason'              => null,
-                            'review_requested_by'        => null,
-                            'review_requested_fecha_fin' => null,
-                            'review_previous_state'      => null,
-
-                            // Auditoría
-                            'approved_by'                => $currentUserId,
-                            'approved_at'                => $now,
-
-                            'completed_at'               => null,
-                        ];
-
-                        $db->table('public.tareas')->where('id_tarea', (int)$taskId)->update($payload);
-
-// =========================================================
-// ✅ LOG de decisión (para modal del solicitante)
-// =========================================================
-$requestedBy = (int)($task['review_requested_by'] ?? 0);
-if ($requestedBy > 0) {
-    $decision  = ($action === 'reject') ? 'rejected' : 'approved';
-    $reviewAct = (string)($task['review_action'] ?? 'state');
-    $details   = [
-        'id_tarea'            => (int)$taskId,
-        'titulo'              => (string)($task['titulo'] ?? ''),
-        'decision'            => $decision,
-        'action'              => $reviewAct,
-        'requested_state'     => $task['review_requested_state'] ?? null,
-        'previous_state'      => $task['review_previous_state'] ?? null,
-        'requested_fecha_fin' => $task['review_requested_fecha_fin'] ?? null,
-        'requested_reason'    => $task['review_reason'] ?? null,
-        'result_estado'       => $payload['id_estado_tarea'] ?? null,
-        'result_fecha_fin'    => $payload['fecha_fin'] ?? null,
-    ];
-
-    $this->insertDecisionLog((int)$taskId, $requestedBy, (int)$currentUserId, $decision, $reviewAct, $details);
-    $this->updateLatestReviewLogDecision((int)$taskId, $requestedBy, $decision, (int)$currentUserId, null);
-}
-                        continue;
-                    }
-
-                    // Rechazo “legacy” => NO REALIZADA
                     $payload = [
-                        'id_estado_tarea'            => $this->estadoNoRealizada,
+                        'id_estado_tarea'            => $prevState,
 
+                        // Limpieza revisión
                         'review_requested_state'     => null,
                         'review_requested_at'        => null,
                         'review_action'              => null,
@@ -4047,280 +4070,60 @@ if ($requestedBy > 0) {
                         'review_requested_fecha_fin' => null,
                         'review_previous_state'      => null,
 
+                        // Auditoría
                         'approved_by'                => $currentUserId,
                         'approved_at'                => $now,
 
-                        'completed_at'               => $now,
-                    ];
-
-                    $db->table('public.tareas')->where('id_tarea', (int)$taskId)->update($payload);
-
-// =========================================================
-// ✅ LOG de decisión (para modal del solicitante)
-// =========================================================
-$requestedBy = (int)($task['review_requested_by'] ?? 0);
-if ($requestedBy > 0) {
-    $decision  = ($action === 'reject') ? 'rejected' : 'approved';
-    $reviewAct = (string)($task['review_action'] ?? 'state');
-    $details   = [
-        'id_tarea'            => (int)$taskId,
-        'titulo'              => (string)($task['titulo'] ?? ''),
-        'decision'            => $decision,
-        'action'              => $reviewAct,
-        'requested_state'     => $task['review_requested_state'] ?? null,
-        'previous_state'      => $task['review_previous_state'] ?? null,
-        'requested_fecha_fin' => $task['review_requested_fecha_fin'] ?? null,
-        'requested_reason'    => $task['review_reason'] ?? null,
-        'result_estado'       => $payload['id_estado_tarea'] ?? null,
-        'result_fecha_fin'    => $payload['fecha_fin'] ?? null,
-    ];
-
-    $this->insertDecisionLog((int)$taskId, $requestedBy, (int)$currentUserId, $decision, $reviewAct, $details);
-    $this->updateLatestReviewLogDecision((int)$taskId, $requestedBy, $decision, (int)$currentUserId, null);
-}
-                    continue;
-                }
-
-                // ==================================================
-                // 4.5) APROBAR
-                // ==================================================
-
-                // A) Cancelación solicitada => Cancelada
-                if ($reviewAction === 'cancel') {
-
-                    $payload = [
-                        'id_estado_tarea'            => $this->estadoCancelada,
                         'completed_at'               => null,
-
-                        'review_requested_state'     => null,
-                        'review_requested_at'        => null,
-                        'review_action'              => null,
-                        'review_reason'              => null,
-                        'review_requested_by'        => null,
-                        'review_requested_fecha_fin' => null,
-                        'review_previous_state'      => null,
-
-                        'approved_by'                => $currentUserId,
-                        'approved_at'                => $now,
                     ];
 
-                    $db->table('public.tareas')->where('id_tarea', (int)$taskId)->update($payload);
+                    $db->table('public.tareas')
+                        ->where('id_tarea', (int)$taskId)
+                        ->update($payload);
 
-// =========================================================
-// ✅ LOG de decisión (para modal del solicitante)
-// =========================================================
-$requestedBy = (int)($task['review_requested_by'] ?? 0);
-if ($requestedBy > 0) {
-    $decision  = ($action === 'reject') ? 'rejected' : 'approved';
-    $reviewAct = (string)($task['review_action'] ?? 'state');
-    $details   = [
-        'id_tarea'            => (int)$taskId,
-        'titulo'              => (string)($task['titulo'] ?? ''),
-        'decision'            => $decision,
-        'action'              => $reviewAct,
-        'requested_state'     => $task['review_requested_state'] ?? null,
-        'previous_state'      => $task['review_previous_state'] ?? null,
-        'requested_fecha_fin' => $task['review_requested_fecha_fin'] ?? null,
-        'requested_reason'    => $task['review_reason'] ?? null,
-        'result_estado'       => $payload['id_estado_tarea'] ?? null,
-        'result_fecha_fin'    => $payload['fecha_fin'] ?? null,
-    ];
+                    if ($requestedBy > 0) {
+                        $details = [
+                            'id_tarea'            => (int)$taskId,
+                            'titulo'              => (string)($task['titulo'] ?? ''),
+                            'decision'            => $decision,
+                            'action'              => $reviewAction,
+                            'requested_state'     => $task['review_requested_state'] ?? null,
+                            'previous_state'      => $task['review_previous_state'] ?? null,
+                            'requested_fecha_fin' => $task['review_requested_fecha_fin'] ?? null,
+                            'requested_reason'    => $task['review_reason'] ?? null,
+                            'result_estado'       => $payload['id_estado_tarea'] ?? null,
+                            'result_fecha_fin'    => null,
+                        ];
 
-    $this->insertDecisionLog((int)$taskId, $requestedBy, (int)$currentUserId, $decision, $reviewAct, $details);
-    $this->updateLatestReviewLogDecision((int)$taskId, $requestedBy, $decision, (int)$currentUserId, null);
-}
+                        $this->insertDecisionLog(
+                            (int)$taskId,
+                            $requestedBy,
+                            (int)$currentUserId,
+                            $decision,
+                            $reviewAction,
+                            $details
+                        );
+
+                        $this->updateLatestReviewLogDecision(
+                            (int)$taskId,
+                            $requestedBy,
+                            $decision,
+                            (int)$currentUserId,
+                            null
+                        );
+                    }
+
                     continue;
                 }
 
-                // ==================================================
-                // B) Cambio de fecha solicitado
-                // ✅ SOLO aquí se incrementa edit_count
-                // ==================================================
-                if ($reviewAction === 'date_change') {
-
-                    $reqFin = (string) ($task['review_requested_fecha_fin'] ?? '');
-
-                    // Si no vino fecha solicitada => volver a estado previo
-                    if (trim($reqFin) === '') {
-                        $payload = [
-                            'id_estado_tarea'            => $prevState,
-
-                            'review_requested_state'     => null,
-                            'review_requested_at'        => null,
-                            'review_action'              => null,
-                            'review_reason'              => null,
-                            'review_requested_by'        => null,
-                            'review_requested_fecha_fin' => null,
-                            'review_previous_state'      => null,
-
-                            'approved_by'                => $currentUserId,
-                            'approved_at'                => $now,
-                            'completed_at'               => null,
-                        ];
-
-                        $db->table('public.tareas')->where('id_tarea', (int)$taskId)->update($payload);
-
-// =========================================================
-// ✅ LOG de decisión (para modal del solicitante)
-// =========================================================
-$requestedBy = (int)($task['review_requested_by'] ?? 0);
-if ($requestedBy > 0) {
-    $decision  = ($action === 'reject') ? 'rejected' : 'approved';
-    $reviewAct = (string)($task['review_action'] ?? 'state');
-    $details   = [
-        'id_tarea'            => (int)$taskId,
-        'titulo'              => (string)($task['titulo'] ?? ''),
-        'decision'            => $decision,
-        'action'              => $reviewAct,
-        'requested_state'     => $task['review_requested_state'] ?? null,
-        'previous_state'      => $task['review_previous_state'] ?? null,
-        'requested_fecha_fin' => $task['review_requested_fecha_fin'] ?? null,
-        'requested_reason'    => $task['review_reason'] ?? null,
-        'result_estado'       => $payload['id_estado_tarea'] ?? null,
-        'result_fecha_fin'    => $payload['fecha_fin'] ?? null,
-    ];
-
-    $this->insertDecisionLog((int)$taskId, $requestedBy, (int)$currentUserId, $decision, $reviewAct, $details);
-    $this->updateLatestReviewLogDecision((int)$taskId, $requestedBy, $decision, (int)$currentUserId, null);
-}
-                        continue;
-                    }
-
-                    // ✅ Conteo actual (cambios ya aprobados)
-                    $editCount = (int) ($task['edit_count'] ?? 0);
-
-                    // ✅ Permitir hasta 3 aprobaciones:
-                    // - si ya tiene 3 => bloquear el 4to
-                    if ($editCount >= 3) {
-                        $payload = [
-                            'id_estado_tarea'            => $prevState,
-
-                            'review_requested_state'     => null,
-                            'review_requested_at'        => null,
-                            'review_action'              => null,
-                            'review_reason'              => null,
-                            'review_requested_by'        => null,
-                            'review_requested_fecha_fin' => null,
-                            'review_previous_state'      => null,
-
-                            'approved_by'                => $currentUserId,
-                            'approved_at'                => $now,
-
-                            'completed_at'               => null,
-                        ];
-
-                        $db->table('public.tareas')->where('id_tarea', (int)$taskId)->update($payload);
-
-// =========================================================
-// ✅ LOG de decisión (para modal del solicitante)
-// =========================================================
-$requestedBy = (int)($task['review_requested_by'] ?? 0);
-if ($requestedBy > 0) {
-    $decision  = ($action === 'reject') ? 'rejected' : 'approved';
-    $reviewAct = (string)($task['review_action'] ?? 'state');
-    $details   = [
-        'id_tarea'            => (int)$taskId,
-        'titulo'              => (string)($task['titulo'] ?? ''),
-        'decision'            => $decision,
-        'action'              => $reviewAct,
-        'requested_state'     => $task['review_requested_state'] ?? null,
-        'previous_state'      => $task['review_previous_state'] ?? null,
-        'requested_fecha_fin' => $task['review_requested_fecha_fin'] ?? null,
-        'requested_reason'    => $task['review_reason'] ?? null,
-        'result_estado'       => $payload['id_estado_tarea'] ?? null,
-        'result_fecha_fin'    => $payload['fecha_fin'] ?? null,
-    ];
-
-    $this->insertDecisionLog((int)$taskId, $requestedBy, (int)$currentUserId, $decision, $reviewAct, $details);
-    $this->updateLatestReviewLogDecision((int)$taskId, $requestedBy, $decision, (int)$currentUserId, null);
-}
-                        continue;
-                    }
-
-                    // Parse fecha solicitada
-                    $endDt = $this->parseLocalDateTime($reqFin);
-
-                    // Recalcular prioridad
-                    $newPriority = (int) ($task['id_prioridad'] ?? 1);
-                    if ($endDt) {
-                        $newPriority = $this->autoPriorityFromEnd($endDt, (int)($task['id_prioridad'] ?? 0));
-                    }
-
-                    $payload = [
-                        'fecha_fin'       => $endDt ? $this->toDbDateTime($endDt) : $reqFin,
-                        'id_prioridad'    => $newPriority,
-
-                        // vuelve al estado previo
-                        'id_estado_tarea' => $prevState,
-
-                        // ✅ solo sube si existe columna
-                        // (si no existe, no rompe)
-                        // edit_count = cambios aprobados
-                        'review_requested_state'     => null,
-                        'review_requested_at'        => null,
-                        'review_action'              => null,
-                        'review_reason'              => null,
-                        'review_requested_by'        => null,
-                        'review_requested_fecha_fin' => null,
-                        'review_previous_state'      => null,
-
-                        'approved_by'     => $currentUserId,
-                        'approved_at'     => $now,
-
-                        'completed_at'    => null,
-                    ];
-
-                    if ($this->taskColumnExists('edit_count')) {
-                        $payload['edit_count'] = $editCount + 1;
-                    }
-
-                    $db->table('public.tareas')->where('id_tarea', (int)$taskId)->update($payload);
-
-// =========================================================
-// ✅ LOG de decisión (para modal del solicitante)
-// =========================================================
-$requestedBy = (int)($task['review_requested_by'] ?? 0);
-if ($requestedBy > 0) {
-    $decision  = ($action === 'reject') ? 'rejected' : 'approved';
-    $reviewAct = (string)($task['review_action'] ?? 'state');
-    $details   = [
-        'id_tarea'            => (int)$taskId,
-        'titulo'              => (string)($task['titulo'] ?? ''),
-        'decision'            => $decision,
-        'action'              => $reviewAct,
-        'requested_state'     => $task['review_requested_state'] ?? null,
-        'previous_state'      => $task['review_previous_state'] ?? null,
-        'requested_fecha_fin' => $task['review_requested_fecha_fin'] ?? null,
-        'requested_reason'    => $task['review_reason'] ?? null,
-        'result_estado'       => $payload['id_estado_tarea'] ?? null,
-        'result_fecha_fin'    => $payload['fecha_fin'] ?? null,
-    ];
-
-    $this->insertDecisionLog((int)$taskId, $requestedBy, (int)$currentUserId, $decision, $reviewAct, $details);
-    $this->updateLatestReviewLogDecision((int)$taskId, $requestedBy, $decision, (int)$currentUserId, null);
-}
-                    continue;
-                }
-
-                // ==================================================
-                // C) LEGACY / COMPATIBILIDAD (realizada / no realizada)
-                // ==================================================
-                $editCount = (int) ($task['edit_count'] ?? 0);
-                $forcedNoRealizada = ($editCount > $this->maxEditsForRealizada);
-
-                $req = (int) ($task['review_requested_state'] ?? 0);
-
-                $finalEstado = in_array($req, [$this->estadoRealizada, $this->estadoNoRealizada], true)
-                    ? $req
-                    : $this->estadoNoRealizada;
-
-                if ($forcedNoRealizada) $finalEstado = $this->estadoNoRealizada;
-
+                // --------------------------------------------------
+                // Rechazo legacy => No realizada
+                // --------------------------------------------------
                 $payload = [
-                    'id_estado_tarea'            => $finalEstado,
+                    'id_estado_tarea'            => $this->estadoNoRealizada,
+
                     'review_requested_state'     => null,
                     'review_requested_at'        => null,
-
                     'review_action'              => null,
                     'review_reason'              => null,
                     'review_requested_by'        => null,
@@ -4330,60 +4133,398 @@ if ($requestedBy > 0) {
                     'approved_by'                => $currentUserId,
                     'approved_at'                => $now,
 
-                    'completed_at' => in_array($finalEstado, [$this->estadoRealizada, $this->estadoNoRealizada], true)
-                        ? $now
-                        : null,
+                    'completed_at'               => $now,
                 ];
 
-                $db->table('public.tareas')->where('id_tarea', (int)$taskId)->update($payload);
+                $db->table('public.tareas')
+                    ->where('id_tarea', (int)$taskId)
+                    ->update($payload);
 
-// =========================================================
-// ✅ LOG de decisión (para modal del solicitante)
-// =========================================================
-$requestedBy = (int)($task['review_requested_by'] ?? 0);
-if ($requestedBy > 0) {
-    $decision  = ($action === 'reject') ? 'rejected' : 'approved';
-    $reviewAct = (string)($task['review_action'] ?? 'state');
-    $details   = [
-        'id_tarea'            => (int)$taskId,
-        'titulo'              => (string)($task['titulo'] ?? ''),
-        'decision'            => $decision,
-        'action'              => $reviewAct,
-        'requested_state'     => $task['review_requested_state'] ?? null,
-        'previous_state'      => $task['review_previous_state'] ?? null,
-        'requested_fecha_fin' => $task['review_requested_fecha_fin'] ?? null,
-        'requested_reason'    => $task['review_reason'] ?? null,
-        'result_estado'       => $payload['id_estado_tarea'] ?? null,
-        'result_fecha_fin'    => $payload['fecha_fin'] ?? null,
-    ];
+                if ($requestedBy > 0) {
+                    $details = [
+                        'id_tarea'            => (int)$taskId,
+                        'titulo'              => (string)($task['titulo'] ?? ''),
+                        'decision'            => $decision,
+                        'action'              => ($reviewAction !== '' ? $reviewAction : 'state'),
+                        'requested_state'     => $task['review_requested_state'] ?? null,
+                        'previous_state'      => $task['review_previous_state'] ?? null,
+                        'requested_fecha_fin' => $task['review_requested_fecha_fin'] ?? null,
+                        'requested_reason'    => $task['review_reason'] ?? null,
+                        'result_estado'       => $payload['id_estado_tarea'] ?? null,
+                        'result_fecha_fin'    => null,
+                    ];
 
-    $this->insertDecisionLog((int)$taskId, $requestedBy, (int)$currentUserId, $decision, $reviewAct, $details);
-    $this->updateLatestReviewLogDecision((int)$taskId, $requestedBy, $decision, (int)$currentUserId, null);
-}
+                    $this->insertDecisionLog(
+                        (int)$taskId,
+                        $requestedBy,
+                        (int)$currentUserId,
+                        $decision,
+                        ($reviewAction !== '' ? $reviewAction : 'state'),
+                        $details
+                    );
+
+                    $this->updateLatestReviewLogDecision(
+                        (int)$taskId,
+                        $requestedBy,
+                        $decision,
+                        (int)$currentUserId,
+                        null
+                    );
+                }
+
+                continue;
             }
-        } catch (\Throwable $e) {
 
-            $db->transRollback();
+            // ==================================================
+            // 4.5) APROBAR
+            // ==================================================
 
-            return [
-                'success' => false,
-                'error'   => 'Error procesando revisión: ' . $e->getMessage(),
+            // --------------------------------------------------
+            // A) Cancelación solicitada => Cancelada
+            // --------------------------------------------------
+            if ($reviewAction === 'cancel') {
+
+                $payload = [
+                    'id_estado_tarea'            => $this->estadoCancelada,
+                    'completed_at'               => null,
+
+                    'review_requested_state'     => null,
+                    'review_requested_at'        => null,
+                    'review_action'              => null,
+                    'review_reason'              => null,
+                    'review_requested_by'        => null,
+                    'review_requested_fecha_fin' => null,
+                    'review_previous_state'      => null,
+
+                    'approved_by'                => $currentUserId,
+                    'approved_at'                => $now,
+                ];
+
+                $db->table('public.tareas')
+                    ->where('id_tarea', (int)$taskId)
+                    ->update($payload);
+
+                if ($requestedBy > 0) {
+                    $details = [
+                        'id_tarea'            => (int)$taskId,
+                        'titulo'              => (string)($task['titulo'] ?? ''),
+                        'decision'            => $decision,
+                        'action'              => $reviewAction,
+                        'requested_state'     => $task['review_requested_state'] ?? null,
+                        'previous_state'      => $task['review_previous_state'] ?? null,
+                        'requested_fecha_fin' => $task['review_requested_fecha_fin'] ?? null,
+                        'requested_reason'    => $task['review_reason'] ?? null,
+                        'result_estado'       => $payload['id_estado_tarea'] ?? null,
+                        'result_fecha_fin'    => null,
+                    ];
+
+                    $this->insertDecisionLog(
+                        (int)$taskId,
+                        $requestedBy,
+                        (int)$currentUserId,
+                        $decision,
+                        $reviewAction,
+                        $details
+                    );
+
+                    $this->updateLatestReviewLogDecision(
+                        (int)$taskId,
+                        $requestedBy,
+                        $decision,
+                        (int)$currentUserId,
+                        null
+                    );
+                }
+
+                continue;
+            }
+
+            // --------------------------------------------------
+            // B) Cambio de fecha solicitado
+            // SOLO aquí incrementa edit_count
+            // --------------------------------------------------
+            if ($reviewAction === 'date_change') {
+
+                $reqFin = trim((string) ($task['review_requested_fecha_fin'] ?? ''));
+
+                // Si no vino fecha solicitada => volver al estado previo
+                if ($reqFin === '') {
+                    $payload = [
+                        'id_estado_tarea'            => $prevState,
+
+                        'review_requested_state'     => null,
+                        'review_requested_at'        => null,
+                        'review_action'              => null,
+                        'review_reason'              => null,
+                        'review_requested_by'        => null,
+                        'review_requested_fecha_fin' => null,
+                        'review_previous_state'      => null,
+
+                        'approved_by'                => $currentUserId,
+                        'approved_at'                => $now,
+                        'completed_at'               => null,
+                    ];
+
+                    $db->table('public.tareas')
+                        ->where('id_tarea', (int)$taskId)
+                        ->update($payload);
+
+                    if ($requestedBy > 0) {
+                        $details = [
+                            'id_tarea'            => (int)$taskId,
+                            'titulo'              => (string)($task['titulo'] ?? ''),
+                            'decision'            => $decision,
+                            'action'              => $reviewAction,
+                            'requested_state'     => $task['review_requested_state'] ?? null,
+                            'previous_state'      => $task['review_previous_state'] ?? null,
+                            'requested_fecha_fin' => $task['review_requested_fecha_fin'] ?? null,
+                            'requested_reason'    => $task['review_reason'] ?? null,
+                            'result_estado'       => $payload['id_estado_tarea'] ?? null,
+                            'result_fecha_fin'    => null,
+                        ];
+
+                        $this->insertDecisionLog(
+                            (int)$taskId,
+                            $requestedBy,
+                            (int)$currentUserId,
+                            $decision,
+                            $reviewAction,
+                            $details
+                        );
+
+                        $this->updateLatestReviewLogDecision(
+                            (int)$taskId,
+                            $requestedBy,
+                            $decision,
+                            (int)$currentUserId,
+                            null
+                        );
+                    }
+
+                    continue;
+                }
+
+                $editCount = (int) ($task['edit_count'] ?? 0);
+
+                // Máximo 3 cambios aprobados
+                if ($editCount >= 3) {
+                    $payload = [
+                        'id_estado_tarea'            => $prevState,
+
+                        'review_requested_state'     => null,
+                        'review_requested_at'        => null,
+                        'review_action'              => null,
+                        'review_reason'              => null,
+                        'review_requested_by'        => null,
+                        'review_requested_fecha_fin' => null,
+                        'review_previous_state'      => null,
+
+                        'approved_by'                => $currentUserId,
+                        'approved_at'                => $now,
+                        'completed_at'               => null,
+                    ];
+
+                    $db->table('public.tareas')
+                        ->where('id_tarea', (int)$taskId)
+                        ->update($payload);
+
+                    if ($requestedBy > 0) {
+                        $details = [
+                            'id_tarea'            => (int)$taskId,
+                            'titulo'              => (string)($task['titulo'] ?? ''),
+                            'decision'            => 'rejected',
+                            'action'              => $reviewAction,
+                            'requested_state'     => $task['review_requested_state'] ?? null,
+                            'previous_state'      => $task['review_previous_state'] ?? null,
+                            'requested_fecha_fin' => $task['review_requested_fecha_fin'] ?? null,
+                            'requested_reason'    => $task['review_reason'] ?? null,
+                            'result_estado'       => $payload['id_estado_tarea'] ?? null,
+                            'result_fecha_fin'    => null,
+                        ];
+
+                        $this->insertDecisionLog(
+                            (int)$taskId,
+                            $requestedBy,
+                            (int)$currentUserId,
+                            'rejected',
+                            $reviewAction,
+                            $details
+                        );
+
+                        $this->updateLatestReviewLogDecision(
+                            (int)$taskId,
+                            $requestedBy,
+                            'rejected',
+                            (int)$currentUserId,
+                            'Máximo de 3 cambios de fecha alcanzado.'
+                        );
+                    }
+
+                    continue;
+                }
+
+                $endDt = $this->parseLocalDateTime($reqFin);
+
+                $newPriority = (int) ($task['id_prioridad'] ?? 1);
+                if ($endDt) {
+                    $newPriority = $this->autoPriorityFromEnd($endDt, (int)($task['id_prioridad'] ?? 0));
+                }
+
+                $payload = [
+                    'fecha_fin'                  => $endDt ? $this->toDbDateTime($endDt) : $reqFin,
+                    'id_prioridad'               => $newPriority,
+                    'id_estado_tarea'            => $prevState,
+
+                    'review_requested_state'     => null,
+                    'review_requested_at'        => null,
+                    'review_action'              => null,
+                    'review_reason'              => null,
+                    'review_requested_by'        => null,
+                    'review_requested_fecha_fin' => null,
+                    'review_previous_state'      => null,
+
+                    'approved_by'                => $currentUserId,
+                    'approved_at'                => $now,
+
+                    'completed_at'               => null,
+                ];
+
+                if ($this->taskColumnExists('edit_count')) {
+                    $payload['edit_count'] = $editCount + 1;
+                }
+
+                $db->table('public.tareas')
+                    ->where('id_tarea', (int)$taskId)
+                    ->update($payload);
+
+                if ($requestedBy > 0) {
+                    $details = [
+                        'id_tarea'            => (int)$taskId,
+                        'titulo'              => (string)($task['titulo'] ?? ''),
+                        'decision'            => $decision,
+                        'action'              => $reviewAction,
+                        'requested_state'     => $task['review_requested_state'] ?? null,
+                        'previous_state'      => $task['review_previous_state'] ?? null,
+                        'requested_fecha_fin' => $task['review_requested_fecha_fin'] ?? null,
+                        'requested_reason'    => $task['review_reason'] ?? null,
+                        'result_estado'       => $payload['id_estado_tarea'] ?? null,
+                        'result_fecha_fin'    => $payload['fecha_fin'] ?? null,
+                    ];
+
+                    $this->insertDecisionLog(
+                        (int)$taskId,
+                        $requestedBy,
+                        (int)$currentUserId,
+                        $decision,
+                        $reviewAction,
+                        $details
+                    );
+
+                    $this->updateLatestReviewLogDecision(
+                        (int)$taskId,
+                        $requestedBy,
+                        $decision,
+                        (int)$currentUserId,
+                        null
+                    );
+                }
+
+                continue;
+            }
+
+            // --------------------------------------------------
+            // C) Legacy / compatibilidad (realizada / no realizada)
+            // --------------------------------------------------
+            $editCount = (int) ($task['edit_count'] ?? 0);
+            $forcedNoRealizada = ($editCount > $this->maxEditsForRealizada);
+
+            $req = (int) ($task['review_requested_state'] ?? 0);
+
+            $finalEstado = in_array($req, [$this->estadoRealizada, $this->estadoNoRealizada], true)
+                ? $req
+                : $this->estadoNoRealizada;
+
+            if ($forcedNoRealizada) {
+                $finalEstado = $this->estadoNoRealizada;
+            }
+
+            $payload = [
+                'id_estado_tarea'            => $finalEstado,
+                'review_requested_state'     => null,
+                'review_requested_at'        => null,
+
+                'review_action'              => null,
+                'review_reason'              => null,
+                'review_requested_by'        => null,
+                'review_requested_fecha_fin' => null,
+                'review_previous_state'      => null,
+
+                'approved_by'                => $currentUserId,
+                'approved_at'                => $now,
+
+                'completed_at' => in_array($finalEstado, [$this->estadoRealizada, $this->estadoNoRealizada], true)
+                    ? $now
+                    : null,
             ];
-        }
 
-        $db->transComplete();
+            $db->table('public.tareas')
+                ->where('id_tarea', (int)$taskId)
+                ->update($payload);
 
-        if ($db->transStatus() === false) {
-            return ['success' => false, 'error' => 'No se pudo completar la transacción.'];
+            if ($requestedBy > 0) {
+                $details = [
+                    'id_tarea'            => (int)$taskId,
+                    'titulo'              => (string)($task['titulo'] ?? ''),
+                    'decision'            => $decision,
+                    'action'              => ($reviewAction !== '' ? $reviewAction : 'state'),
+                    'requested_state'     => $task['review_requested_state'] ?? null,
+                    'previous_state'      => $task['review_previous_state'] ?? null,
+                    'requested_fecha_fin' => $task['review_requested_fecha_fin'] ?? null,
+                    'requested_reason'    => $task['review_reason'] ?? null,
+                    'result_estado'       => $payload['id_estado_tarea'] ?? null,
+                    'result_fecha_fin'    => null,
+                ];
+
+                $this->insertDecisionLog(
+                    (int)$taskId,
+                    $requestedBy,
+                    (int)$currentUserId,
+                    $decision,
+                    ($reviewAction !== '' ? $reviewAction : 'state'),
+                    $details
+                );
+
+                $this->updateLatestReviewLogDecision(
+                    (int)$taskId,
+                    $requestedBy,
+                    $decision,
+                    (int)$currentUserId,
+                    null
+                );
+            }
         }
+    } catch (\Throwable $e) {
+        $db->transRollback();
 
         return [
-            'success' => true,
-            'message' => ($action === 'reject')
-                ? 'Las tareas rechazadas fueron procesadas correctamente.'
-                : 'Las tareas fueron aprobadas correctamente.',
+            'success' => false,
+            'error'   => 'Error procesando revisión: ' . $e->getMessage(),
         ];
     }
+
+    $db->transComplete();
+
+    if ($db->transStatus() === false) {
+        return ['success' => false, 'error' => 'No se pudo completar la transacción.'];
+    }
+
+    return [
+        'success' => true,
+        'message' => ($action === 'reject')
+            ? 'Las tareas rechazadas fueron procesadas correctamente.'
+            : 'Las tareas fueron aprobadas correctamente.',
+    ];
+}
     /**
      * buildHistorySeries()
      *
@@ -4429,425 +4570,576 @@ if ($requestedBy > 0) {
         return $series;
     }
     /**
- * =========================================================
- * HISTÓRICO OFICIAL DESDE TABLAS:
- * - public.historico_division
- * - public.historico_area
- *
- * ✅ Objetivo:
- * - Llenar "history" (últimas 4 + actual) con valores REALES guardados
- * - Llenar "avg_4_weeks" con promedio REAL de esas 4 semanas previas
- *
- * ✅ No invasivo:
- * - Si NO hay fila en historico_* para una semana, cae al motor actual
- *   (calcSatisfaccionChain) para no dejarlo vacío.
- * =========================================================
- */
+     * =========================================================
+     * HISTÓRICO OFICIAL DESDE TABLAS:
+     * - public.historico_division
+     * - public.historico_area
+     *
+     * ✅ Objetivo:
+     * - Llenar "history" (últimas 4 + actual) con valores REALES guardados
+     * - Llenar "avg_4_weeks" con promedio REAL de esas 4 semanas previas
+     *
+     * ✅ No invasivo:
+     * - Si NO hay fila en historico_* para una semana, cae al motor actual
+     *   (calcSatisfaccionChain) para no dejarlo vacío.
+     * =========================================================
+     */
 
-/**
- * Devuelve el miércoles de corte (Y-m-d) para un weekStart (jueves).
- * weekStart = jueves 00:00
- * corte = weekStart + 6 días (miércoles)
- */
-private function cutKeyFromWeekStart(\DateTimeImmutable $weekStart): string
-{
-    return $weekStart->modify('+6 days')->setTime(0, 0, 0)->format('Y-m-d');
-}
+    /**
+     * Devuelve el miércoles de corte (Y-m-d) para un weekStart (jueves).
+     * weekStart = jueves 00:00
+     * corte = weekStart + 6 días (miércoles)
+     */
+    private function cutKeyFromWeekStart(\DateTimeImmutable $weekStart): string
+    {
+        return $weekStart->modify('+6 days')->setTime(0, 0, 0)->format('Y-m-d');
+    }
 
-/**
- * Lee satisfaccion desde historico_division (si existe).
- * Retorna null si no hay fila.
- */
-private function fetchHistoricoDivisionPct(int $divisionId, string $cutKeyYmd): ?float
-{
-    try {
-        $db = Database::connect();
+    /**
+     * Lee satisfaccion desde historico_division (si existe).
+     * Retorna null si no hay fila.
+     */
+    private function fetchHistoricoDivisionPct(int $divisionId, string $cutKeyYmd): ?float
+    {
+        try {
+            $db = Database::connect();
 
-        $row = $db->query(
-            'SELECT satisfaccion
+            $row = $db->query(
+                'SELECT satisfaccion
              FROM public.historico_division
              WHERE id_division = ?
                AND semana = ?
              LIMIT 1',
-            [$divisionId, $cutKeyYmd]
-        )->getRowArray();
+                [$divisionId, $cutKeyYmd]
+            )->getRowArray();
 
-        if (!$row) {
+            if (!$row) {
+                return null;
+            }
+
+            return (float)($row['satisfaccion'] ?? 0);
+        } catch (\Throwable $e) {
             return null;
         }
-
-        return (float)($row['satisfaccion'] ?? 0);
-    } catch (\Throwable $e) {
-        return null;
     }
-}
 
-/**
- * Lee satisfaccion desde historico_area (si existe).
- * Retorna null si no hay fila.
- */
-private function fetchHistoricoAreaPct(int $areaId, string $cutKeyYmd): ?float
-{
-    try {
-        $db = Database::connect();
+    /**
+     * Lee satisfaccion desde historico_area (si existe).
+     * Retorna null si no hay fila.
+     */
+    private function fetchHistoricoAreaPct(int $areaId, string $cutKeyYmd): ?float
+    {
+        try {
+            $db = Database::connect();
 
-        $row = $db->query(
-            'SELECT satisfaccion
+            $row = $db->query(
+                'SELECT satisfaccion
              FROM public.historico_area
              WHERE id_area = ?
                AND semana = ?
              LIMIT 1',
-            [$areaId, $cutKeyYmd]
-        )->getRowArray();
+                [$areaId, $cutKeyYmd]
+            )->getRowArray();
 
-        if (!$row) {
+            if (!$row) {
+                return null;
+            }
+
+            return (float)($row['satisfaccion'] ?? 0);
+        } catch (\Throwable $e) {
             return null;
         }
-
-        return (float)($row['satisfaccion'] ?? 0);
-    } catch (\Throwable $e) {
-        return null;
     }
-}
 
 
-/**
- * Lee satisfaccion desde public.historico (PERSONAL).
- * Retorna null si no hay fila.
- *
- * IMPORTANTE:
- * - historico.semana = miércoles de corte (cutKey)
- * - historico.id_user = usuario
- * - historico.satisfaccion = porcentaje ya guardado
- */
-private function fetchHistoricoPersonalPct(int $userId, string $cutKeyYmd): ?float
-{
-    try {
-        $db = Database::connect();
+    /**
+     * Lee satisfaccion desde public.historico (PERSONAL).
+     * Retorna null si no hay fila.
+     *
+     * IMPORTANTE:
+     * - historico.semana = miércoles de corte (cutKey)
+     * - historico.id_user = usuario
+     * - historico.satisfaccion = porcentaje ya guardado
+     */
+    private function fetchHistoricoPersonalPct(int $userId, string $cutKeyYmd): ?float
+    {
+        try {
+            $db = Database::connect();
 
-        $row = $db->query(
-            'SELECT satisfaccion
+            $row = $db->query(
+                'SELECT satisfaccion
              FROM public.historico
              WHERE id_user = ?
                AND semana  = ?
              LIMIT 1',
-            [$userId, $cutKeyYmd]
-        )->getRowArray();
+                [$userId, $cutKeyYmd]
+            )->getRowArray();
 
-        if (!$row) {
+            if (!$row) {
+                return null;
+            }
+
+            // Puede venir null en BD si no se guardó en esa semana
+            if ($row['satisfaccion'] === null) {
+                return null;
+            }
+
+            return (float) ($row['satisfaccion'] ?? 0);
+        } catch (\Throwable $e) {
             return null;
         }
-
-        // Puede venir null en BD si no se guardó en esa semana
-        if ($row['satisfaccion'] === null) {
-            return null;
-        }
-
-        return (float) ($row['satisfaccion'] ?? 0);
-    } catch (\Throwable $e) {
-        return null;
     }
-}
-
-/**
- * Construye "history" (últimas 4 + actual) tomando:
- * 1) historico_division / historico_area si existe fila
- * 2) si no existe => fallback a calcSatisfaccionChain()
- */
-/**
- * Construye "history" (últimas 4 + actual) tomando:
- * 1) historico_division / historico_area / historico (personal) si existe fila
- * 2) si no existe => fallback a calcSatisfaccionChain()
- */
-private function buildHistorySeriesFromHistorico(
-    array $userIds,
-    \DateTimeImmutable $currentWeekStart,
-    ?int $divisionId = null,
-    ?int $areaId = null
-): array {
-    $series = [];
 
     /**
-     * =========================================================
-     * ✅ Detectar si es PERSONAL
-     * - Personal = no divisionId y no areaId
-     * - Para personal necesitamos 1 solo id_user
-     * =========================================================
+     * Construye "history" (últimas 4 + actual) tomando:
+     * 1) historico_division / historico_area si existe fila
+     * 2) si no existe => fallback a calcSatisfaccionChain()
      */
-    $isPersonal = (($divisionId === null || $divisionId <= 0) && ($areaId === null || $areaId <= 0));
+    /**
+     * Construye "history" (últimas 4 + actual) tomando:
+     * 1) historico_division / historico_area / historico (personal) si existe fila
+     * 2) si no existe => fallback a calcSatisfaccionChain()
+     */
+    private function buildHistorySeriesFromHistorico(
+        array $userIds,
+        \DateTimeImmutable $currentWeekStart,
+        ?int $divisionId = null,
+        ?int $areaId = null
+    ): array {
+        $series = [];
 
-    $personalUserId = null;
-    if ($isPersonal) {
-        $tmp = array_values(array_unique(array_filter(array_map('intval', $userIds), static fn($x) => $x > 0)));
-        if (count($tmp) === 1) {
-            $personalUserId = (int) $tmp[0];
+        /**
+         * =========================================================
+         * ✅ Detectar si es PERSONAL
+         * - Personal = no divisionId y no areaId
+         * - Para personal necesitamos 1 solo id_user
+         * =========================================================
+         */
+        $isPersonal = (($divisionId === null || $divisionId <= 0) && ($areaId === null || $areaId <= 0));
+
+        $personalUserId = null;
+        if ($isPersonal) {
+            $tmp = array_values(array_unique(array_filter(array_map('intval', $userIds), static fn($x) => $x > 0)));
+            if (count($tmp) === 1) {
+                $personalUserId = (int) $tmp[0];
+            }
         }
-    }
 
-    // ---------------------------------------------------------
-    // Recorremos últimas 4 semanas previas (en orden)
-    // ---------------------------------------------------------
-    for ($i = 4; $i >= 1; $i--) {
+        // ---------------------------------------------------------
+        // Recorremos últimas 4 semanas previas (en orden)
+        // ---------------------------------------------------------
+        for ($i = 4; $i >= 1; $i--) {
 
-        $wStart = $currentWeekStart->modify("-{$i} week")->setTime(0, 0, 0);
-        $wEndEx = $wStart->modify('+7 days')->setTime(0, 0, 0);
+            $wStart = $currentWeekStart->modify("-{$i} week")->setTime(0, 0, 0);
+            $wEndEx = $wStart->modify('+7 days')->setTime(0, 0, 0);
 
-        // miércoles de corte (clave para historico_*.semana e historico.semana)
-        $cutKey = $this->cutKeyFromWeekStart($wStart);
+            // miércoles de corte (clave para historico_*.semana e historico.semana)
+            $cutKey = $this->cutKeyFromWeekStart($wStart);
 
-        // 1) intentar histórico oficial
-        $pct = null;
+            // 1) intentar histórico oficial
+            $pct = null;
+
+            if ($divisionId !== null && $divisionId > 0) {
+                // ✅ División
+                $pct = $this->fetchHistoricoDivisionPct($divisionId, $cutKey);
+            } elseif ($areaId !== null && $areaId > 0) {
+                // ✅ Área
+                $pct = $this->fetchHistoricoAreaPct($areaId, $cutKey);
+            } elseif ($isPersonal && $personalUserId !== null && $personalUserId > 0) {
+                // ✅ PERSONAL: public.historico.satisfaccion
+                $pct = $this->fetchHistoricoPersonalPct($personalUserId, $cutKey);
+            }
+
+            // 2) fallback si no hay histórico (no dejamos vacío)
+            if ($pct === null) {
+                $data = $this->calcSatisfaccionChain($userIds, $wStart, $wEndEx, $divisionId, $areaId);
+                $pct  = (float) ($data['porcentaje'] ?? 0);
+            }
+
+            $series[] = [
+                'label' => $this->buildWeekLabel($wStart),
+                'value' => (float) number_format(max(0, min(100, $pct)), 2, '.', ''),
+            ];
+        }
+
+        // ---------------------------------------------------------
+        // Semana actual (última barra)
+        // ---------------------------------------------------------
+        $curStart  = $currentWeekStart->setTime(0, 0, 0);
+        $curEndEx  = $curStart->modify('+7 days')->setTime(0, 0, 0);
+        $curCutKey = $this->cutKeyFromWeekStart($curStart);
+
+        $curPct = null;
 
         if ($divisionId !== null && $divisionId > 0) {
-            // ✅ División
-            $pct = $this->fetchHistoricoDivisionPct($divisionId, $cutKey);
-
+            $curPct = $this->fetchHistoricoDivisionPct($divisionId, $curCutKey);
         } elseif ($areaId !== null && $areaId > 0) {
-            // ✅ Área
-            $pct = $this->fetchHistoricoAreaPct($areaId, $cutKey);
-
+            $curPct = $this->fetchHistoricoAreaPct($areaId, $curCutKey);
         } elseif ($isPersonal && $personalUserId !== null && $personalUserId > 0) {
-            // ✅ PERSONAL: public.historico.satisfaccion
-            $pct = $this->fetchHistoricoPersonalPct($personalUserId, $cutKey);
+            $curPct = $this->fetchHistoricoPersonalPct($personalUserId, $curCutKey);
         }
 
-        // 2) fallback si no hay histórico (no dejamos vacío)
-        if ($pct === null) {
-            $data = $this->calcSatisfaccionChain($userIds, $wStart, $wEndEx, $divisionId, $areaId);
-            $pct  = (float) ($data['porcentaje'] ?? 0);
+        if ($curPct === null) {
+            $curData = $this->calcSatisfaccionChain($userIds, $curStart, $curEndEx, $divisionId, $areaId);
+            $curPct  = (float) ($curData['porcentaje'] ?? 0);
         }
 
         $series[] = [
-            'label' => $this->buildWeekLabel($wStart),
-            'value' => (float) number_format(max(0, min(100, $pct)), 2, '.', ''),
+            'label' => $this->buildWeekLabel($curStart),
+            'value' => (float) number_format(max(0, min(100, $curPct)), 2, '.', ''),
         ];
+
+        return $series;
     }
 
-    // ---------------------------------------------------------
-    // Semana actual (última barra)
-    // ---------------------------------------------------------
-    $curStart  = $currentWeekStart->setTime(0, 0, 0);
-    $curEndEx  = $curStart->modify('+7 days')->setTime(0, 0, 0);
-    $curCutKey = $this->cutKeyFromWeekStart($curStart);
+    /**
+     * Promedio últimas 4 semanas (NO incluye la actual),
+     * usando histórico oficial si existe (y fallback si no).
+     */
+    /**
+     * Promedio últimas 4 semanas (NO incluye la actual),
+     * usando histórico oficial si existe (y fallback si no).
+     *
+     * ✅ División -> historico_division
+     * ✅ Área     -> historico_area
+     * ✅ Personal -> historico (columna satisfaccion)
+     */
+    private function getLast4WeeksAverageFromHistorico(
+        array $userIds,
+        \DateTimeImmutable $currentWeekStart,
+        ?int $divisionId = null,
+        ?int $areaId = null
+    ): float {
+        $sum = 0.0;
+        $cnt = 0;
 
-    $curPct = null;
+        // ✅ Detectar PERSONAL
+        $isPersonal = (($divisionId === null || $divisionId <= 0) && ($areaId === null || $areaId <= 0));
 
-    if ($divisionId !== null && $divisionId > 0) {
-        $curPct = $this->fetchHistoricoDivisionPct($divisionId, $curCutKey);
-
-    } elseif ($areaId !== null && $areaId > 0) {
-        $curPct = $this->fetchHistoricoAreaPct($areaId, $curCutKey);
-
-    } elseif ($isPersonal && $personalUserId !== null && $personalUserId > 0) {
-        $curPct = $this->fetchHistoricoPersonalPct($personalUserId, $curCutKey);
-    }
-
-    if ($curPct === null) {
-        $curData = $this->calcSatisfaccionChain($userIds, $curStart, $curEndEx, $divisionId, $areaId);
-        $curPct  = (float) ($curData['porcentaje'] ?? 0);
-    }
-
-    $series[] = [
-        'label' => $this->buildWeekLabel($curStart),
-        'value' => (float) number_format(max(0, min(100, $curPct)), 2, '.', ''),
-    ];
-
-    return $series;
-}
-
-/**
- * Promedio últimas 4 semanas (NO incluye la actual),
- * usando histórico oficial si existe (y fallback si no).
- */
-/**
- * Promedio últimas 4 semanas (NO incluye la actual),
- * usando histórico oficial si existe (y fallback si no).
- *
- * ✅ División -> historico_division
- * ✅ Área     -> historico_area
- * ✅ Personal -> historico (columna satisfaccion)
- */
-private function getLast4WeeksAverageFromHistorico(
-    array $userIds,
-    \DateTimeImmutable $currentWeekStart,
-    ?int $divisionId = null,
-    ?int $areaId = null
-): float {
-    $sum = 0.0;
-    $cnt = 0;
-
-    // ✅ Detectar PERSONAL
-    $isPersonal = (($divisionId === null || $divisionId <= 0) && ($areaId === null || $areaId <= 0));
-
-    $personalUserId = null;
-    if ($isPersonal) {
-        $tmp = array_values(array_unique(array_filter(array_map('intval', $userIds), static fn($x) => $x > 0)));
-        if (count($tmp) === 1) {
-            $personalUserId = (int) $tmp[0];
-        }
-    }
-
-    for ($i = 1; $i <= 4; $i++) {
-
-        $wStart = $currentWeekStart->modify("-{$i} week")->setTime(0, 0, 0);
-        $wEndEx = $wStart->modify('+7 days')->setTime(0, 0, 0);
-
-        $cutKey = $this->cutKeyFromWeekStart($wStart);
-
-        $pct = null;
-
-        // 1) Intentar histórico
-        if ($divisionId !== null && $divisionId > 0) {
-            $pct = $this->fetchHistoricoDivisionPct($divisionId, $cutKey);
-
-        } elseif ($areaId !== null && $areaId > 0) {
-            $pct = $this->fetchHistoricoAreaPct($areaId, $cutKey);
-
-        } elseif ($isPersonal && $personalUserId !== null && $personalUserId > 0) {
-            $pct = $this->fetchHistoricoPersonalPct($personalUserId, $cutKey);
+        $personalUserId = null;
+        if ($isPersonal) {
+            $tmp = array_values(array_unique(array_filter(array_map('intval', $userIds), static fn($x) => $x > 0)));
+            if (count($tmp) === 1) {
+                $personalUserId = (int) $tmp[0];
+            }
         }
 
-        // 2) Fallback: calcular si no hay fila histórica
-        if ($pct === null) {
-            $data = $this->calcSatisfaccionChain($userIds, $wStart, $wEndEx, $divisionId, $areaId);
-            $pct  = (float) ($data['porcentaje'] ?? 0);
+        for ($i = 1; $i <= 4; $i++) {
+
+            $wStart = $currentWeekStart->modify("-{$i} week")->setTime(0, 0, 0);
+            $wEndEx = $wStart->modify('+7 days')->setTime(0, 0, 0);
+
+            $cutKey = $this->cutKeyFromWeekStart($wStart);
+
+            $pct = null;
+
+            // 1) Intentar histórico
+            if ($divisionId !== null && $divisionId > 0) {
+                $pct = $this->fetchHistoricoDivisionPct($divisionId, $cutKey);
+            } elseif ($areaId !== null && $areaId > 0) {
+                $pct = $this->fetchHistoricoAreaPct($areaId, $cutKey);
+            } elseif ($isPersonal && $personalUserId !== null && $personalUserId > 0) {
+                $pct = $this->fetchHistoricoPersonalPct($personalUserId, $cutKey);
+            }
+
+            // 2) Fallback: calcular si no hay fila histórica
+            if ($pct === null) {
+                $data = $this->calcSatisfaccionChain($userIds, $wStart, $wEndEx, $divisionId, $areaId);
+                $pct  = (float) ($data['porcentaje'] ?? 0);
+            }
+
+            $sum += (float) $pct;
+            $cnt++;
         }
 
-        $sum += (float) $pct;
-        $cnt++;
+        return ($cnt > 0) ? round($sum / $cnt, 2) : 0.0;
     }
-
-    return ($cnt > 0) ? round($sum / $cnt, 2) : 0.0;
-}
 // =========================================================
 // DECISION NOTIFICATIONS (modal para solicitantes)
 // =========================================================
 
-/**
- * Obtiene notificaciones NO VISTAS para el usuario que solicitó la revisión.
- * Usa: tarea_review_decision_log
- */
-public function getDecisionNotifications(int $requestedBy): array
-{
-    $db = Database::connect();
+    /**
+     * Obtiene notificaciones NO VISTAS para el usuario que solicitó la revisión.
+     * Usa: tarea_review_decision_log
+     */
+    public function getDecisionNotifications(int $requestedBy): array
+    {
+        // ==================================================
+        // ✅ Conexión a BD
+        // ==================================================
+        $db = Database::connect();
 
-    $rows = $db->table('tarea_review_decision_log l')
-        ->select([
-            'l.id_log',
-            'l.id_tarea',
-            'l.requested_by',
-            'l.decided_by',
-            'l.decision',
-            'l.action',
-            'l.decided_at',
-            'l.details',
-            'u.nombres AS decided_by_nombres',
-            'u.apellidos AS decided_by_apellidos',
-            't.titulo AS titulo_tarea',
-        ])
-        ->join('public."USER" u', 'u.id_user = l.decided_by', 'left')
-        ->join('tareas t', 't.id_tarea = l.id_tarea', 'left')
-        ->where('l.requested_by', $requestedBy)
-        ->where('l.seen_by_requester', false)
-        ->orderBy('l.decided_at', 'DESC')
-        ->limit(50)
-        ->get()
-        ->getResultArray();
+        try {
+            // ==================================================
+            // ✅ Consultar SOLO notificaciones no leídas
+            // - requested_by: usuario que hizo la solicitud
+            // - seen_by_requester = false: aún no vistas
+            // ==================================================
+            $rows = $db->table('public.tarea_review_decision_log l')
+                ->select([
+                    'l.id_log',
+                    'l.id_tarea',
+                    'l.requested_by',
+                    'l.decided_by',
+                    'l.decision',
+                    'l.action',
+                    'l.decided_at',
+                    'l.details',
+                    'l.seen_by_requester',
+                    'u.nombres AS decided_by_nombres',
+                    'u.apellidos AS decided_by_apellidos',
+                    't.titulo AS titulo_tarea',
+                ])
+                ->join('public."USER" u', 'u.id_user = l.decided_by', 'left')
+                ->join('public.tareas t', 't.id_tarea = l.id_tarea', 'left')
+                ->where('l.requested_by', $requestedBy)
+                ->where('l.seen_by_requester', false)
+                ->orderBy('l.decided_at', 'DESC')
+                ->limit(50)
+                ->get()
+                ->getResultArray();
 
-    foreach ($rows as &$r) {
-        $r['approved_by_nombre'] = trim(($r['decided_by_nombres'] ?? '') . ' ' . ($r['decided_by_apellidos'] ?? ''));
-        $r['titulo'] = $r['titulo_tarea'] ?? ($r['titulo'] ?? '');
+            // ==================================================
+            // ✅ Normalizar salida para la vista
+            // ==================================================
+            foreach ($rows as &$r) {
+                // ----------------------------------------------
+                // Nombre del supervisor que aprobó/rechazó
+                // ----------------------------------------------
+                $fullName = trim(
+                    (string)($r['decided_by_nombres'] ?? '') . ' ' .
+                        (string)($r['decided_by_apellidos'] ?? '')
+                );
+
+                $r['approved_by_nombre'] = ($fullName !== '') ? $fullName : 'Supervisor';
+
+                // ----------------------------------------------
+                // Título amigable de la tarea
+                // ----------------------------------------------
+                $titulo = trim((string)($r['titulo_tarea'] ?? ''));
+                $r['titulo'] = ($titulo !== '') ? $titulo : 'Actividad';
+
+                // ----------------------------------------------
+                // Decodificar details (jsonb)
+                // Puede venir:
+                // - array
+                // - string JSON
+                // - null
+                // ----------------------------------------------
+                $decodedDetails = [];
+
+                if (isset($r['details']) && $r['details'] !== null && $r['details'] !== '') {
+                    if (is_array($r['details'])) {
+                        $decodedDetails = $r['details'];
+                    } else {
+                        $tmp = json_decode((string)$r['details'], true);
+                        if (is_array($tmp)) {
+                            $decodedDetails = $tmp;
+                        }
+                    }
+                }
+
+                $r['details_array'] = $decodedDetails;
+
+                // ----------------------------------------------
+                // Campos útiles ya preparados para la vista
+                // ----------------------------------------------
+                $r['requested_state']     = $decodedDetails['requested_state'] ?? null;
+                $r['previous_state']      = $decodedDetails['previous_state'] ?? null;
+                $r['requested_fecha_fin'] = $decodedDetails['requested_fecha_fin'] ?? null;
+                $r['requested_reason']    = $decodedDetails['requested_reason'] ?? null;
+                $r['result_estado']       = $decodedDetails['result_estado'] ?? null;
+                $r['result_fecha_fin']    = $decodedDetails['result_fecha_fin'] ?? null;
+
+                // ----------------------------------------------
+                // Compatibles con tu JS / modal actual
+                // ----------------------------------------------
+                $r['action_label'] = match ((string)($r['action'] ?? '')) {
+                    'cancel'      => 'Cancelación',
+                    'date_change' => 'Cambio de fecha',
+                    'state'       => 'Cambio de estado',
+                    default       => 'Solicitud',
+                };
+
+                $r['decision_label'] = match (strtolower((string)($r['decision'] ?? ''))) {
+                    'approved' => 'APROBADA',
+                    'rejected' => 'RECHAZADA',
+                    default    => 'PROCESADA',
+                };
+            }
+            unset($r);
+
+            return $rows;
+        } catch (\Throwable $e) {
+            log_message('error', 'getDecisionNotifications error: ' . $e->getMessage());
+            return [];
+        }
     }
-    unset($r);
+    /**
+     * Marca como vistas TODAS las notificaciones del solicitante.
+     */
+    public function markDecisionNotificationsAsSeen(int $requestedBy): int
+    {
+        // ==================================================
+        // ✅ Conexión a la base de datos
+        // ==================================================
+        $db = Database::connect();
 
-    return $rows;
-}
+        try {
+            // ==================================================
+            // ✅ Validación mínima
+            // ==================================================
+            if ($requestedBy <= 0) {
+                return 0;
+            }
 
-/**
- * Marca como vistas TODAS las notificaciones del solicitante.
- */
-public function markDecisionNotificationsAsSeen(int $requestedBy): int
-{
-    $db = Database::connect();
+            // ==================================================
+            // ✅ Marcar como leídas SOLO las no vistas
+            // ==================================================
+            $db->table('public.tarea_review_decision_log')
+                ->where('requested_by', $requestedBy)
+                ->where('seen_by_requester', false)
+                ->update([
+                    'seen_by_requester' => true,
+                ]);
 
-    $db->table('tarea_review_decision_log')
-        ->where('requested_by', $requestedBy)
-        ->where('seen_by_requester', false)
-        ->update(['seen_by_requester' => true]);
+            // ==================================================
+            // ✅ Retornar cuántas filas fueron afectadas
+            // ==================================================
+            return (int) $db->affectedRows();
+        } catch (\Throwable $e) {
+            // ==================================================
+            // ✅ Log de error para depuración
+            // ==================================================
+            log_message('error', 'markDecisionNotificationsAsSeen error: ' . $e->getMessage());
+            return 0;
+        }
+    }
 
-    return (int) $db->affectedRows();
-}
+    /**
+     * Inserta una fila en tarea_review_decision_log (jsonb details).
+     */
+    private function insertDecisionLog(
+        int $idTarea,
+        int $requestedBy,
+        int $decidedBy,
+        string $decision,
+        string $action,
+        array $details
+    ): void {
+        $db = Database::connect();
 
-/**
- * Inserta una fila en tarea_review_decision_log (jsonb details).
- */
-private function insertDecisionLog(
-    int $idTarea,
-    int $requestedBy,
-    int $decidedBy,
-    string $decision,
-    string $action,
-    array $details
-): void {
-    $db = Database::connect();
+        try {
+            // ==================================================
+            // ✅ Validaciones mínimas
+            // ==================================================
+            if ($idTarea <= 0 || $requestedBy <= 0 || $decidedBy <= 0) {
+                return;
+            }
 
-    $payload = [
-        'id_tarea'          => $idTarea,
-        'requested_by'      => $requestedBy,
-        'decided_by'        => $decidedBy,
-        'decision'          => $decision,
-        'action'            => $action,
-        'decided_at'        => date('Y-m-d H:i:sP'),
-        'details'           => json_encode($details, JSON_UNESCAPED_UNICODE),
-        'seen_by_requester' => false,
-    ];
+            $decision = strtolower(trim($decision));
+            $action   = trim($action);
 
-    try {
-        $db->table('tarea_review_decision_log')->insert($payload);
-    } catch (\Throwable $e) {
-        log_message('error', 'insertDecisionLog error: ' . $e->getMessage());
+            if (!in_array($decision, ['approved', 'rejected'], true)) {
+                return;
+            }
+
+            if ($action === '') {
+                $action = 'state';
+            }
+
+            $payload = [
+                'id_tarea'          => $idTarea,
+                'requested_by'      => $requestedBy,
+                'decided_by'        => $decidedBy,
+                'decision'          => $decision,
+                'action'            => $action,
+                'decided_at'        => date('Y-m-d H:i:sP'),
+                'details'           => json_encode($details, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
+                'seen_by_requester' => false,
+            ];
+
+            $db->table('public.tarea_review_decision_log')->insert($payload);
+        } catch (\Throwable $e) {
+            log_message('error', 'insertDecisionLog error: ' . $e->getMessage());
+        }
+    }
+
+    /**
+     * Completa la decisión en el ÚLTIMO registro de tarea_review_log
+     * (deja constancia del resultado).
+     */
+    private function updateLatestReviewLogDecision(
+        int $idTarea,
+        int $requestedBy,
+        string $decision,
+        int $decidedBy,
+        ?string $decidedReason = null
+    ): void {
+        $db = Database::connect();
+
+        try {
+            // ==================================================
+            // ✅ Validaciones mínimas
+            // ==================================================
+            if ($idTarea <= 0 || $requestedBy <= 0 || $decidedBy <= 0) {
+                return;
+            }
+
+            $decision = strtolower(trim($decision));
+
+            if (!in_array($decision, ['approved', 'rejected'], true)) {
+                return;
+            }
+
+            // ==================================================
+            // ✅ Verificar si existe la tabla tarea_review_log
+            // para no romper si en algún ambiente no existe
+            // ==================================================
+            $tableExists = $db->query("
+            SELECT 1
+            FROM information_schema.tables
+            WHERE table_schema = 'public'
+              AND table_name = 'tarea_review_log'
+            LIMIT 1
+        ")->getRowArray();
+
+            if (!$tableExists) {
+                return;
+            }
+
+            // ==================================================
+            // ✅ Buscar el último log de revisión de esa tarea
+            // y de ese usuario solicitante
+            // ==================================================
+            $last = $db->table('public.tarea_review_log')
+                ->select('id_review_log')
+                ->where('id_tarea', $idTarea)
+                ->where('requested_by', $requestedBy)
+                ->orderBy('requested_at', 'DESC')
+                ->limit(1)
+                ->get()
+                ->getRowArray();
+
+            if (!$last || empty($last['id_review_log'])) {
+                return;
+            }
+
+            // ==================================================
+            // ✅ Actualizar decisión final
+            // ==================================================
+            $db->table('public.tarea_review_log')
+                ->where('id_review_log', (int) $last['id_review_log'])
+                ->update([
+                    'decision'       => $decision,
+                    'decided_at'     => date('Y-m-d H:i:sP'),
+                    'decided_by'     => $decidedBy,
+                    'decided_reason' => ($decidedReason !== null && trim($decidedReason) !== '')
+                        ? trim($decidedReason)
+                        : null,
+                ]);
+        } catch (\Throwable $e) {
+            log_message('error', 'updateLatestReviewLogDecision error: ' . $e->getMessage());
+        }
     }
 }
-
-/**
- * Completa la decisión en el ÚLTIMO registro de tarea_review_log
- * (deja constancia del resultado).
- */
-private function updateLatestReviewLogDecision(
-    int $idTarea,
-    int $requestedBy,
-    string $decision,
-    int $decidedBy,
-    ?string $decidedReason = null
-): void {
-    $db = Database::connect();
-
-    try {
-        $last = $db->table('tarea_review_log')
-            ->select('id_review_log')
-            ->where('id_tarea', $idTarea)
-            ->where('requested_by', $requestedBy)
-            ->orderBy('requested_at', 'DESC')
-            ->limit(1)
-            ->get()
-            ->getRowArray();
-
-        if (!$last || empty($last['id_review_log'])) return;
-
-        $db->table('tarea_review_log')
-            ->where('id_review_log', (int)$last['id_review_log'])
-            ->update([
-                'decision'       => $decision,
-                'decided_at'     => date('Y-m-d H:i:sP'),
-                'decided_by'     => $decidedBy,
-                'decided_reason' => $decidedReason,
-            ]);
-    } catch (\Throwable $e) {
-        log_message('error', 'updateLatestReviewLogDecision error: ' . $e->getMessage());
-    }
-}
-
-   
-}
-
-

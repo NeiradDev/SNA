@@ -27,7 +27,22 @@ class Tareas extends BaseController
         if (!session()->get('logged_in')) {
             return redirect()->to(site_url('login'));
         }
+
         return null;
+    }
+
+    /**
+     * ==================================================
+     * ✅ NUEVO: Verifica si la tarea ya está cerrada
+     * - 3 = Realizada
+     * - 4 = No realizada
+     * - 5 = Cancelada
+     * ==================================================
+     */
+    private function isClosedTask(array $tarea): bool
+    {
+        $estadoId = (int)($tarea['id_estado_tarea'] ?? 0);
+        return in_array($estadoId, [3, 4, 5], true);
     }
 
     // ==================================================
@@ -35,7 +50,6 @@ class Tareas extends BaseController
     // ==================================================
     public function calendario()
     {
-        // ✅ Seguridad
         if ($r = $this->requireLogin()) {
             return $r;
         }
@@ -48,27 +62,22 @@ class Tareas extends BaseController
     // ==================================================
     public function asignarForm()
     {
-        // ✅ Seguridad
         if ($r = $this->requireLogin()) {
             return $r;
         }
 
-        // ✅ Usuario logueado
         $idUser = (int) session()->get('id_user');
 
-        // ✅ Determinar división del usuario (para mostrarla en form)
         $division = $this->service->getDivisionByUser($idUser);
         if (!$division) {
             return redirect()->back()->with('error', 'No se pudo determinar la división del usuario.');
         }
 
-        // ✅ Scope UI (super/division/area/self)
         $assignScope = $this->service->getAssignScopeForUi(
             (int) session()->get('id_user'),
             (int) session()->get('id_area')
         );
 
-        // ✅ Render vista
         return view('tareas/asignar', [
             'tarea'           => null,
             'divisionUsuario' => $division,
@@ -87,21 +96,15 @@ class Tareas extends BaseController
     // ==================================================
     public function asignarStore()
     {
-        // ✅ Seguridad
         if ($r = $this->requireLogin()) {
             return $r;
         }
 
-        // ✅ POST del form
         $post = $this->request->getPost();
-
-        // ✅ Quien asigna (auditoría)
         $asignadoPor = (int) session()->get('id_user');
 
-        // ✅ Crea tarea(s)
         $result = $this->service->createTaskFromPost($post, $asignadoPor);
 
-        // ✅ Errores
         if (!($result['success'] ?? false)) {
             return redirect()->to(site_url('tareas/asignar'))
                 ->with('error', (string)($result['error'] ?? 'No se pudo guardar la tarea.'))
@@ -115,106 +118,111 @@ class Tareas extends BaseController
     // ==================================================
     // GESTIONAR
     // ==================================================
-   public function gestionar()
-{
-    // ✅ Seguridad
-    if ($r = $this->requireLogin()) {
-        return $r;
+    public function gestionar()
+    {
+        if ($r = $this->requireLogin()) {
+            return $r;
+        }
+
+        $idUser = (int) session()->get('id_user');
+        $idArea = (int) session()->get('id_area');
+
+        $data = $this->service->getTasksForManagement($idUser, $idArea);
+
+        return view('tareas/gestionar', [
+            'assignScope'          => $data['assignScope'] ?? [],
+            'misTareas'            => $data['misTareas'] ?? [],
+            'misDiarias'           => $data['misDiarias'] ?? [
+                'activas'  => [],
+                'revision' => [],
+                'cerradas' => [],
+            ],
+            'tareasAsignadas'      => $data['tareasAsignadas'] ?? [],
+            'tareasEquipo'         => $data['tareasEquipo'] ?? [],
+            'pendientesRevision'   => $data['pendientesRevision'] ?? [],
+            'dueAlerts'            => $data['dueAlerts'] ?? [],
+            'expiredUpdated'       => $data['expiredUpdated'] ?? 0,
+
+            /**
+             * ✅ NOTIFICACIONES DE DECISIÓN
+             * Solo deben mostrarse las no vistas.
+             * La lógica real de "solo no vistas" queda en el service.
+             */
+            'decisionNotifications' => $this->service->getDecisionNotifications($idUser),
+
+            'error'                => session()->getFlashdata('error'),
+            'success'              => session()->getFlashdata('success'),
+        ]);
     }
-
-    $idUser = (int) session()->get('id_user');
-    $idArea = (int) session()->get('id_area');
-
-    // ✅ Trae data agrupada (mis tareas / asignadas / equipo / pendientes revisión)
-    $data = $this->service->getTasksForManagement($idUser, $idArea);
-
-    return view('tareas/gestionar', [
-        'assignScope'        => $data['assignScope'] ?? [],
-        'misTareas'          => $data['misTareas'] ?? [],
-
-        // ✅ NUEVO: Mis tareas diarias (repetidas de HOY)
-        'misDiarias'         => $data['misDiarias'] ?? ['activas'=>[],'revision'=>[],'cerradas'=>[]],
-
-        'tareasAsignadas'    => $data['tareasAsignadas'] ?? [],
-        'tareasEquipo'       => $data['tareasEquipo'] ?? [],
-        'pendientesRevision' => $data['pendientesRevision'] ?? [],
-        'dueAlerts'          => $data['dueAlerts'] ?? [],
-        'expiredUpdated'     => $data['expiredUpdated'] ?? 0,            'decisionNotifications' => $this->service->getDecisionNotifications($idUser),
-
-        'error'              => session()->getFlashdata('error'),
-        'success'            => session()->getFlashdata('success'),
-    ]);
-}
 
     // ==================================================
     // EDITAR
     // ==================================================
     public function editar(int $idTarea)
-{
-    // ✅ Seguridad
-    if ($r = $this->requireLogin()) {
-        return $r;
+    {
+        if ($r = $this->requireLogin()) {
+            return $r;
+        }
+
+        $idUser = (int) session()->get('id_user');
+        $idArea = (int) session()->get('id_area');
+
+        $tarea = $this->service->getTaskById($idTarea, $idUser);
+        if (!$tarea) {
+            return redirect()->to(site_url('tareas/gestionar'))
+                ->with('error', 'Tarea no encontrada o no autorizada.');
+        }
+
+        /**
+         * ✅ NUEVO: BLOQUEO BACKEND DE TAREAS CERRADAS
+         * Si ya está:
+         * - Realizada
+         * - No realizada
+         * - Cancelada
+         * no puede volver a entrar a editar
+         */
+        if ($this->isClosedTask($tarea)) {
+            return redirect()->to(site_url('tareas/gestionar'))
+                ->with('error', 'Esta actividad ya fue cerrada y no puede editarse.');
+        }
+
+        $division = $this->service->getDivisionByUser($idUser);
+        if (!$division) {
+            return redirect()->to(site_url('tareas/gestionar'))
+                ->with('error', 'No se pudo determinar la división del usuario.');
+        }
+
+        $assignScope = $this->service->getAssignScopeForUi($idUser, $idArea);
+        $assignMode  = (string)($assignScope['mode'] ?? 'self');
+
+        return view('tareas/asignar', [
+            'divisionUsuario' => $division,
+            'areasDivision'   => $this->service->getAreasByDivision((int) $division['id_division']),
+            'prioridades'     => $this->service->getPrioridades(),
+            'estados'         => $this->service->getEstadosTarea(),
+            'tarea'           => $tarea,
+            'assignScope'     => $assignScope,
+            'assignMode'      => $assignMode,
+            'old'             => session()->getFlashdata('old') ?? [],
+            'error'           => session()->getFlashdata('error'),
+            'success'         => session()->getFlashdata('success'),
+        ]);
     }
-
-    $idUser = (int) session()->get('id_user');
-    $idArea = (int) session()->get('id_area');
-
-    // ✅ Carga tarea validando permisos
-    $tarea = $this->service->getTaskById($idTarea, $idUser);
-    if (!$tarea) {
-        return redirect()->to(site_url('tareas/gestionar'))
-            ->with('error', 'Tarea no encontrada o no autorizada.');
-    }
-
-    // ✅ Determinar división del usuario
-    $division = $this->service->getDivisionByUser($idUser);
-    if (!$division) {
-        return redirect()->to(site_url('tareas/gestionar'))
-            ->with('error', 'No se pudo determinar la división del usuario.');
-    }
-
-    // ✅ Scope UI
-    $assignScope = $this->service->getAssignScopeForUi($idUser, $idArea);
-
-    // ✅ NUEVO (simple y seguro):
-    // En la vista: si mode === 'self' => NO editar fecha fin, solo solicitar cambio
-    $assignMode = (string)($assignScope['mode'] ?? 'self');
-
-    return view('tareas/asignar', [
-        'divisionUsuario' => $division,
-        'areasDivision'   => $this->service->getAreasByDivision((int) $division['id_division']),
-        'prioridades'     => $this->service->getPrioridades(),
-        'estados'         => $this->service->getEstadosTarea(),
-        'tarea'           => $tarea,
-        'assignScope'     => $assignScope,
-        'assignMode'      => $assignMode, 
-        'old'             => session()->getFlashdata('old') ?? [],
-        'error'           => session()->getFlashdata('error'),
-        'success'         => session()->getFlashdata('success'),
-    ]);
-}
 
     // ==================================================
     // ACTUALIZAR
     // ==================================================
     public function actualizar(int $idTarea)
     {
-        // ✅ Seguridad
         if ($r = $this->requireLogin()) {
             return $r;
         }
 
-        // ✅ POST del form
         $post = $this->request->getPost();
 
         $currentUserId   = (int) session()->get('id_user');
         $currentUserArea = (int) session()->get('id_area');
 
-        // ==================================================
-        // ✅ (SEGURIDAD EXTRA) BLOQUEAR CAMBIO DE FECHA INICIO
-        // - Aunque la vista lo bloquea, aquí lo reforzamos.
-        // - Cargamos la tarea para tener la fecha_inicio real.
-        // ==================================================
         $tareaActual = $this->service->getTaskById($idTarea, $currentUserId);
 
         if (!$tareaActual) {
@@ -222,20 +230,25 @@ class Tareas extends BaseController
                 ->with('error', 'Tarea no encontrada o no autorizada.');
         }
 
-        // ✅ Fuerza la fecha_inicio a la original (si alguien manipula HTML)
+        /**
+         * ✅ NUEVO: BLOQUEO BACKEND DE ACTUALIZACIÓN
+         * Aunque alguien manipule la URL o el HTML,
+         * una tarea cerrada ya no se puede actualizar.
+         */
+        if ($this->isClosedTask($tareaActual)) {
+            return redirect()->to(site_url('tareas/gestionar'))
+                ->with('error', 'Esta actividad ya fue cerrada y no puede modificarse.');
+        }
+
+        // ✅ Fuerza la fecha_inicio a la original
         if (isset($tareaActual['fecha_inicio'])) {
             $post['fecha_inicio'] = (string) $tareaActual['fecha_inicio'];
         }
 
-        // ==================================================
-        // ✅ Si viene solicitud de revisión (cambio fecha / cancelación)
-        // ==================================================
         $reviewAction = trim((string) ($post['review_action'] ?? ''));
         $reviewReason = trim((string) ($post['review_reason'] ?? ''));
 
         if (in_array($reviewAction, ['date_change', 'cancel'], true)) {
-
-            // ✅ Motivo obligatorio
             if ($reviewReason === '') {
                 return redirect()->back()
                     ->with('error', 'Debes escribir un motivo para enviar la solicitud a revisión.')
@@ -244,12 +257,6 @@ class Tareas extends BaseController
 
             $requestedEnd = null;
 
-            // ==================================================
-            // ✅ CAMBIO IMPORTANTE:
-            // - La vista manda el "nuevo fin solicitado" en:
-            //   review_requested_fecha_fin
-            // - NO debemos tomarlo desde fecha_fin para evitar mezclar
-            // ==================================================
             if ($reviewAction === 'date_change') {
                 $requestedEnd = trim((string) ($post['review_requested_fecha_fin'] ?? ''));
 
@@ -260,7 +267,6 @@ class Tareas extends BaseController
                 }
             }
 
-            // ✅ Enviar solicitud al supervisor (service decide el supervisor y guarda en pendientes)
             $result = $this->service->requestReviewChange(
                 $idTarea,
                 $reviewAction,
@@ -280,9 +286,6 @@ class Tareas extends BaseController
                 ->with('success', (string) ($result['message'] ?? 'Solicitud enviada a revisión.'));
         }
 
-        // ==================================================
-        // ✅ Flujo normal (jefes/super pueden guardar directo)
-        // ==================================================
         $result = $this->service->updateTask(
             $idTarea,
             $post,
@@ -327,7 +330,10 @@ class Tareas extends BaseController
         if (!session()->get('logged_in')) {
             return $this->response
                 ->setStatusCode(401)
-                ->setJSON(['success' => false, 'error' => 'No autorizado']);
+                ->setJSON([
+                    'success' => false,
+                    'error'   => 'No autorizado',
+                ]);
         }
 
         return $this->response->setJSON(
@@ -371,12 +377,12 @@ class Tareas extends BaseController
         $idUser = (int) session()->get('id_user');
 
         return view('tareas/satisfaccion', [
-            'data' => $this->service->getSatisfaccionResumen($idUser)
+            'data' => $this->service->getSatisfaccionResumen($idUser),
         ]);
     }
 
     // ==================================================
-    // ✅ Alias: /tareas/estado/{id}
+    // Alias: /tareas/estado/{id}
     // ==================================================
     public function estado(int $idTarea)
     {
@@ -386,12 +392,10 @@ class Tareas extends BaseController
     /**
      * cambiarEstado($idTarea)
      *
-     * ✅ Permite SOLO 3 o 4 (Realizada / No realizada)
-     * ✅ Si el usuario es self, va a revisión.
-     * ✅ Si es jefe/super, cierra directo (depende del Service).
-     *
-     * ✅ Puede recibir motivo opcional:
-     * - POST: review_reason o motivo
+     * ✅ SOLO 3 o 4
+     * ✅ self => revisión
+     * ✅ jefe/super => directo según service
+     * ✅ soporta evidencia
      */
     public function cambiarEstado(int $idTarea)
     {
@@ -417,16 +421,24 @@ class Tareas extends BaseController
             ]);
         }
 
-        // ✅ Motivo opcional
         $reason = (string) ($this->request->getPost('review_reason') ?? $this->request->getPost('motivo') ?? '');
         $reason = trim($reason);
+
+        $hasEvidenceRaw = (string) ($this->request->getPost('has_evidence') ?? '0');
+        $hasEvidence    = in_array(strtolower($hasEvidenceRaw), ['1', 'true', 'on', 'yes'], true);
+
+        $evidenceUrl  = trim((string) ($this->request->getPost('evidence_url') ?? ''));
+        $evidenceNote = trim((string) ($this->request->getPost('evidence_note') ?? ''));
 
         $result = $this->service->requestOrSetEstado(
             $idTarea,
             $estado,
             (int) session()->get('id_user'),
             (int) session()->get('id_area'),
-            ($reason !== '' ? $reason : null)
+            ($reason !== '' ? $reason : null),
+            $hasEvidence,
+            ($evidenceUrl !== '' ? $evidenceUrl : null),
+            ($evidenceNote !== '' ? $evidenceNote : null)
         );
 
         return $this->response->setJSON([
@@ -438,13 +450,10 @@ class Tareas extends BaseController
     }
 
     // ==================================================
-    // ✅ Cancelar
-    // - usuario asignado => solicita revisión
-    // - supervisor directo / super => puede aplicar directo
+    // CANCELAR
     // ==================================================
     public function cancelar(int $idTarea)
     {
-        // ✅ Seguridad
         if ($r = $this->requireLogin()) {
             return $r;
         }
@@ -453,18 +462,12 @@ class Tareas extends BaseController
             return redirect()->to(site_url('tareas/gestionar'));
         }
 
-        // ✅ Usuario actual
         $currentUserId   = (int) (session()->get('id_user') ?? 0);
         $currentUserArea = (int) (session()->get('id_area') ?? 0);
 
-        // ✅ Motivo:
-        // - si es usuario asignado/self, el Service lo exigirá
-        // - si es supervisor/super, puede ir vacío y cancelar directo
         $reason = (string) ($this->request->getPost('review_reason') ?? $this->request->getPost('motivo') ?? '');
         $reason = trim($reason);
 
-        // ✅ IMPORTANTE:
-        // centralizamos toda la lógica en cancelTask()
         $result = $this->service->cancelTask(
             $idTarea,
             $currentUserId,
@@ -482,9 +485,7 @@ class Tareas extends BaseController
     }
 
     // ==================================================
-    // ✅ Endpoint general 3/4/5 (si lo usas por AJAX)
-    // - 5 => self solicita revisión / supervisor cancela directo
-    // - 3/4 => requestOrSetEstado
+    // ENDPOINT GENERAL 3/4/5
     // ==================================================
     public function cambiarEstadoGeneral(int $idTarea)
     {
@@ -510,11 +511,6 @@ class Tareas extends BaseController
             ]);
         }
 
-        // ==================================================
-        // ✅ 5 = Cancelada
-        // - self/asignado => a revisión con motivo obligatorio
-        // - supervisor/super => cancelación directa
-        // ==================================================
         if ($estado === 5) {
             $reason = (string) ($this->request->getPost('review_reason') ?? $this->request->getPost('motivo') ?? '');
             $reason = trim($reason);
@@ -554,7 +550,7 @@ class Tareas extends BaseController
     }
 
     // ==================================================
-    // ✅ Revisión por lote
+    // REVISIÓN POR LOTE
     // ==================================================
     public function revisionBatch()
     {
@@ -593,25 +589,33 @@ class Tareas extends BaseController
             'csrfHash' => csrf_hash(),
         ]);
     }
-/**
- * Marca como vistas las notificaciones de decisión del usuario solicitante.
- * Se llama vía AJAX cuando el modal se muestra o se cierra.
- */
-public function markDecisionSeen()
-{
-    if ($r = $this->requireLogin()) {
-        return $r;
+
+    /**
+     * ==================================================
+     * ✅ NUEVO: Marcar notificaciones como leídas
+     * - Usa la tabla tarea_review_decision_log
+     * - El service debe actualizar seen_by_requester = true
+     * - Se llamará por AJAX desde la vista
+     * ==================================================
+     */
+    public function markDecisionSeen()
+    {
+        if (!session()->get('logged_in')) {
+            return $this->response->setStatusCode(401)->setJSON([
+                'success'  => false,
+                'error'    => 'No autorizado',
+                'count'    => 0,
+                'csrfHash' => csrf_hash(),
+            ]);
+        }
+
+        $idUser = (int) session()->get('id_user');
+        $count  = (int) $this->service->markDecisionNotificationsAsSeen($idUser);
+
+        return $this->response->setJSON([
+            'success'  => true,
+            'count'    => $count,
+            'csrfHash' => csrf_hash(),
+        ]);
     }
-
-    $idUser = (int) session()->get('id_user');
-    $count  = $this->service->markDecisionNotificationsAsSeen($idUser);
-
-    return $this->response->setJSON([
-        'success' => true,
-        'count'   => $count,
-        'csrfHash'=> csrf_hash(),
-    ]);
-}
-
-
 }

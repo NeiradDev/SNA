@@ -2,6 +2,7 @@
 const menu = document.getElementById('menu');
 const sidebar = document.getElementById('sidebar');
 const main = document.getElementById('main');
+const toggles = document.querySelectorAll('.toggle');
 
 menu.addEventListener('click', () => {
     sidebar.classList.toggle('menu-toggle');
@@ -9,10 +10,28 @@ menu.addEventListener('click', () => {
     main.classList.toggle('menu-toggle');
 });
 
-document.querySelectorAll('.toggle').forEach(item => {
-    item.addEventListener('click', function(e) {
+toggles.forEach(toggle => {
+    toggle.addEventListener('click', function(e) {
         e.preventDefault();
-        this.parentElement.classList.toggle('active');
+
+        const parent = this.parentElement;
+
+        // abrir sidebar si está cerrado
+        if (!sidebar.classList.contains('menu-toggle')) {
+            sidebar.classList.add('menu-toggle');
+            menu.classList.add('menu-toggle');
+            main.classList.add('menu-toggle');
+        }
+
+        // cerrar otros submenus
+        document.querySelectorAll('.has-sub').forEach(item => {
+            if (item !== parent) {
+                item.classList.remove('active');
+            }
+        });
+
+        // toggle del actual
+        parent.classList.toggle('active');
     });
 });
 /*LOGICA PLAN DE BATALLA */

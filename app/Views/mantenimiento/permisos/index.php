@@ -2,6 +2,8 @@
 
 <?= $this->section('styles') ?>
 
+  <link rel="stylesheet" href="<?= base_url('/assets/css/permisos.css') ?>">
+
 <?= $this->endSection() ?>
 
 <?= $this->section('contenido') ?>
@@ -171,16 +173,6 @@ $percentageAssigned = ($totalPermissions > 0)
           </div>
         </div>
       </div>
-
-      <div>
-        <div>Cómo usar esta pantalla</div>
-        <ul>
-          <li><strong>Paso 1:</strong> carga un cargo base para ver sus permisos actuales.</li>
-          <li><strong>Paso 2:</strong> marca o desmarca permisos en la parte inferior.</li>
-          <li><strong>Paso 3:</strong> decide si guardar solo en el cargo base o aplicar a varios cargos.</li>
-          <li>Los permisos afectan tanto el menú visible como el acceso real a las rutas protegidas.</li>
-        </ul>
-      </div>
     </div>
 
     <?php if ($selectedCargoId <= 0): ?>
@@ -220,14 +212,19 @@ $percentageAssigned = ($totalPermissions > 0)
 
         <input type="hidden" name="id_cargo" value="<?= $selectedCargoId ?>">
         <div id="multiTargetsHidden"></div>
-
+        
+        <?php /* ===============================
+                      NO FUNCIONAN
+                ================================*/ ?>
         <div>
           <div>
             <div>
               <button type="button" onclick="checkAllPermissions(true)">Marcar todo</button>
               <button type="button" onclick="checkAllPermissions(false)">Desmarcar todo</button>
             </div>
-
+        <?php /* ===============================
+                      FUNCIONAN
+                ================================*/ ?>
             <div>
               <button type="button" onclick="expandAllModules()">Expandir módulos</button>
               <button type="button" onclick="collapseAllModules()">Contraer módulos</button>
@@ -335,112 +332,5 @@ $percentageAssigned = ($totalPermissions > 0)
 <?= $this->endSection() ?>
 
 <?= $this->section('scripts') ?>
-<script>
-  function checkAllPermissions(state) {
-    document.querySelectorAll('.permission-checkbox').forEach(function (checkbox) {
-      checkbox.checked = !!state;
-    });
-    updateCheckedStyles();
-  }
-
-  function toggleModule(moduleKey, state) {
-    document.querySelectorAll('.module-' + moduleKey).forEach(function (checkbox) {
-      checkbox.checked = !!state;
-    });
-    updateCheckedStyles();
-  }
-
-  function toggleModuleBody(moduleKey) {
-    var body = document.getElementById('module-body-' + moduleKey);
-    if (!body) return;
-
-    body.style.display = (body.style.display === 'none') ? '' : 'none';
-  }
-
-  function expandAllModules() {
-    document.querySelectorAll('[id^="module-body-"]').forEach(function (el) {
-      el.style.display = '';
-    });
-  }
-
-  function collapseAllModules() {
-    document.querySelectorAll('[id^="module-body-"]').forEach(function (el) {
-      el.style.display = 'none';
-    });
-  }
-
-  function updateCheckedStyles() {
-    document.querySelectorAll('.ws-permission-item').forEach(function (item) {
-      var checkbox = item.querySelector('.permission-checkbox');
-      if (!checkbox) return;
-
-      item.classList.toggle('is-checked', checkbox.checked);
-    });
-
-    document.querySelectorAll('.ws-target-item').forEach(function (item) {
-      var checkbox = item.querySelector('.target-cargo-checkbox');
-      if (!checkbox) return;
-
-      item.classList.toggle('is-checked', checkbox.checked);
-    });
-  }
-
-  function syncMultiTargetsToForm() {
-    var hiddenContainer = document.getElementById('multiTargetsHidden');
-    if (!hiddenContainer) return;
-
-    hiddenContainer.innerHTML = '';
-
-    document.querySelectorAll('.target-cargo-checkbox:checked').forEach(function (checkbox) {
-      var input = document.createElement('input');
-      input.type = 'hidden';
-      input.name = 'target_cargo_ids[]';
-      input.value = checkbox.value;
-      hiddenContainer.appendChild(input);
-    });
-  }
-
-  function updateMultiSelectedNote() {
-    var checked = document.querySelectorAll('.target-cargo-checkbox:checked');
-    var note = document.getElementById('multiSelectedNote');
-    if (!note) return;
-
-    note.textContent = checked.length === 0
-      ? 'No has seleccionado cargos destino aún.'
-      : 'Cargos destino seleccionados: ' + checked.length;
-  }
-
-  function updateSelectionMode() {
-    var singleMode = document.getElementById('mode_single');
-    var multiBox = document.getElementById('multiTargetBox');
-
-    if (!singleMode || !multiBox) return;
-
-    if (singleMode.checked) {
-      multiBox.classList.add('d-none');
-    } else {
-      multiBox.classList.remove('d-none');
-    }
-  }
-
-  document.getElementById('mode_single')?.addEventListener('change', updateSelectionMode);
-  document.getElementById('mode_multi')?.addEventListener('change', updateSelectionMode);
-
-  document.querySelectorAll('.target-cargo-checkbox').forEach(function (checkbox) {
-    checkbox.addEventListener('change', function () {
-      updateCheckedStyles();
-      updateMultiSelectedNote();
-      syncMultiTargetsToForm();
-    });
-  });
-
-  document.getElementById('permissionForm')?.addEventListener('submit', function () {
-    syncMultiTargetsToForm();
-  });
-
-  updateSelectionMode();
-  updateCheckedStyles();
-  updateMultiSelectedNote();
-  syncMultiTargetsToForm();
-</script>
+<script src="<?= base_url('assets/js/mantenimiento/permisos.js') ?>"></script>
 <?= $this->endSection() ?>

@@ -1,4 +1,4 @@
-<?= $this->extend('layouts/main') ?>
+<?= $this->extend('layouts/main') ?> 
 <?= $this->section('contenido') ?>
 
 <?php
@@ -7,25 +7,27 @@
  * Vista: tareas/asignar.php  (UI renombrada a "Actividades")
  * ------------------------------------------------------------
  *
- * ✅ Mantiene lo funcional (como tu archivo base):
+ * ✅ Mantiene lo funcional:
  * - Actividad individual: fecha inicio/fin con hora (Flatpickr).
  * - Edición: fecha inicio fija; si scope=self, fecha fin NO se edita directo (solo solicitud).
  * - Prioridad automática según fecha fin (hidden real).
  * - Multi-asignación (asignado_a[]).
  * - Soporta recurrencia (daily/weekly) SOLO al crear.
  *
- * ✅ Cambios solicitados en ESTE paso:
- * 1) Visualmente NO mostrar la palabra "tarea" -> todo dice "actividad".
- * 2) En recurrencia ("Actividades diarias"):
- *    - Bloquear selección de días anteriores (rec_start_date min=hoy, validación JS).
- *    - La recurrencia queda FIJA a 1 semana:
- *        weeks_count = 1 (readonly) y repeat_until = rec_start_date + 6 (readonly).
- *    - Solo reordenar los checkboxes de días: Mié, Jue, Vie, Sáb, Dom, Lun, Mar.
- * 3) Estado fijo: siempre "En proceso" (id_estado_tarea=2) y OCULTAR el label/selector visual de estado.
+ * ✅ UI mejorada con paleta corporativa:
+ * - #F20505
+ * - #F22E2E
+ * - #F27272
+ * - #F2F2F2
+ * - #0D0D0D
  *
- * NOTA:
- * - NO se cambia tu lógica backend. Solo UI y validaciones.
- * - Se siguen enviando los mismos campos que ya espera tu controlador/servicio.
+ * ✅ Cambios visuales:
+ * - Tarjetas modernas
+ * - Encabezado con gradiente
+ * - Inputs estilizados
+ * - Botones corporativos
+ * - Microanimaciones
+ * - Modal integrado al mismo estilo
  */
 
 // ------------------------------------------------------------
@@ -50,7 +52,7 @@ $oldArea = (int)($old['id_area'] ?? ($tarea['id_area'] ?? 0));
 /**
  * ✅ Multi-asignación:
  * - old('asignado_a') puede venir como array
- * - tarea['asignado_a'] (en edición) debe venir como array (por el Service)
+ * - tarea['asignado_a'] (en edición) debe venir como array
  */
 $rawOldAsignados = $old['asignado_a'] ?? ($tarea['asignado_a'] ?? []);
 $oldAsignados = [];
@@ -83,17 +85,14 @@ $toDbDateTime = function($value): string {
     $value = trim((string)$value);
     if ($value === '') return '';
 
-    // Si viene como datetime-local: YYYY-mm-ddTHH:ii
     if (strpos($value, 'T') !== false && preg_match('/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/', $value)) {
         return str_replace('T', ' ', substr($value, 0, 16));
     }
 
-    // Si viene de BD: YYYY-mm-dd HH:ii:ss ó YYYY-mm-dd HH:ii
     if (preg_match('/^\d{4}-\d{2}-\d{2}\s\d{2}:\d{2}/', $value)) {
         return substr($value, 0, 16);
     }
 
-    // Intento genérico
     try {
         $tz = new \DateTimeZone('America/Guayaquil');
         $dt = new \DateTime($value, $tz);
@@ -195,72 +194,480 @@ if (!$isEdit) {
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
 
 <style>
-/* =========================================================
-   Botones (tu estilo base)
-========================================================= */
-.btn-black{
-  background:#000;
-  color:#fff;
-  border:1px solid #000;
-  transition: all .2s ease;
-}
-.btn-black:hover{
-  background:#222;
-  border-color:#222;
-  color:#fff;
-  transform: translateY(-1px);
-}
-.btn-black-outline{
-  background:#fff;
-  color:#000;
-  border:1px solid #000;
-  transition: all .2s ease;
-}
-.btn-black-outline:hover{
-  background:#000;
-  color:#fff;
+:root{
+  --ws-red-1:#F20505;
+  --ws-red-2:#F22E2E;
+  --ws-red-3:#F27272;
+  --ws-light:#F2F2F2;
+  --ws-dark:#0D0D0D;
+
+  --ws-border:rgba(13,13,13,.10);
+  --ws-border-strong:rgba(13,13,13,.18);
+  --ws-shadow:0 18px 45px -28px rgba(13,13,13,.35);
+  --ws-shadow-soft:0 10px 24px -18px rgba(13,13,13,.22);
+  --ws-radius-xl:22px;
+  --ws-radius-lg:18px;
+  --ws-radius-md:14px;
+  --ws-radius-sm:12px;
+  --ws-transition:all .22s ease;
 }
 
 /* =========================================================
-   Select de usuarios
+   Fondo / animación general
+========================================================= */
+.ws-activity-page{
+  animation: wsFadeIn .38s ease;
+}
+
+@keyframes wsFadeIn{
+  from{
+    opacity:0;
+    transform:translateY(10px);
+  }
+  to{
+    opacity:1;
+    transform:translateY(0);
+  }
+}
+
+/* =========================================================
+   Header superior
+========================================================= */
+.ws-page-hero{
+  position:relative;
+  overflow:hidden;
+  border-radius:var(--ws-radius-xl);
+  padding:1.4rem 1.4rem;
+  margin-bottom:1.25rem;
+  background:
+    linear-gradient(135deg, var(--ws-dark) 0%, #231313 35%, var(--ws-red-2) 100%);
+  color:#fff;
+  box-shadow:var(--ws-shadow);
+}
+
+.ws-page-hero::before{
+  content:"";
+  position:absolute;
+  inset:0;
+  background:
+    radial-gradient(circle at top right, rgba(242,114,114,.35), transparent 30%),
+    radial-gradient(circle at bottom left, rgba(242,242,242,.08), transparent 32%);
+  pointer-events:none;
+}
+
+.ws-page-hero > *{
+  position:relative;
+  z-index:1;
+}
+
+.ws-page-title{
+  margin:0;
+  font-weight:900;
+  letter-spacing:.3px;
+}
+
+.ws-page-subtitle{
+  margin-top:.35rem;
+  color:rgba(255,255,255,.86);
+  font-size:.95rem;
+}
+
+.ws-top-pill{
+  display:inline-flex;
+  align-items:center;
+  gap:.45rem;
+  border-radius:999px;
+  padding:.45rem .85rem;
+  border:1px solid rgba(255,255,255,.16);
+  background:rgba(255,255,255,.10);
+  color:#fff;
+  font-weight:800;
+  font-size:.85rem;
+  box-shadow:0 10px 25px -20px rgba(255,255,255,.35);
+}
+
+/* =========================================================
+   Card principal
+========================================================= */
+.ws-main-card{
+  border:1px solid var(--ws-border);
+  border-radius:var(--ws-radius-xl);
+  background:linear-gradient(180deg, #ffffff 0%, var(--ws-light) 100%);
+  box-shadow:var(--ws-shadow);
+  overflow:hidden;
+}
+
+.ws-main-card .card-body{
+  padding:1.4rem;
+}
+
+/* =========================================================
+   Secciones
+========================================================= */
+.ws-section{
+  border:1px solid var(--ws-border);
+  border-radius:var(--ws-radius-lg);
+  background:#fff;
+  padding:1rem;
+  box-shadow:var(--ws-shadow-soft);
+  transition:var(--ws-transition);
+}
+
+.ws-section:hover{
+  transform:translateY(-1px);
+}
+
+.ws-section-title{
+  display:flex;
+  align-items:center;
+  gap:.6rem;
+  margin:0 0 .85rem 0;
+  font-size:1rem;
+  font-weight:900;
+  letter-spacing:.2px;
+  color:var(--ws-dark);
+}
+
+.ws-section-title::before{
+  content:"";
+  width:10px;
+  height:10px;
+  border-radius:999px;
+  background:linear-gradient(135deg, var(--ws-red-1) 0%, var(--ws-red-3) 100%);
+  box-shadow:0 0 0 5px rgba(242,46,46,.10);
+}
+
+/* =========================================================
+   Labels / forms
+========================================================= */
+.form-label{
+  font-weight:800 !important;
+  color:var(--ws-dark);
+  margin-bottom:.45rem;
+}
+
+.form-control,
+.form-select{
+  border:1px solid rgba(13,13,13,.14);
+  border-radius:14px;
+  min-height:46px;
+  background:#fff;
+  color:var(--ws-dark);
+  transition:var(--ws-transition);
+  box-shadow:none;
+}
+
+textarea.form-control{
+  min-height:120px;
+  resize:vertical;
+}
+
+.form-control:focus,
+.form-select:focus{
+  border-color:rgba(242,46,46,.45);
+  box-shadow:0 0 0 .22rem rgba(242,46,46,.12);
+}
+
+.form-control[disabled],
+.form-control[readonly],
+.form-select[disabled]{
+  background:#f7f7f7 !important;
+  color:rgba(13,13,13,.70) !important;
+  cursor:not-allowed;
+}
+
+.text-muted,
+small.text-muted,
+.date-help,
+.users-note,
+.recurrence-preview,
+.recurrence_hint,
+.text-muted.small{
+  color:rgba(13,13,13,.68) !important;
+}
+
+/* =========================================================
+   Box de usuarios
 ========================================================= */
 .users-box{
-  border:1px solid rgba(0,0,0,.18);
-  border-radius:10px;
-  padding:10px;
+  border:1px solid rgba(13,13,13,.14);
+  border-radius:16px;
+  padding:12px 12px;
   max-height:260px;
   overflow:auto;
-  background:#fff;
+  background:linear-gradient(180deg, #fff 0%, #fbfbfb 100%);
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.6);
 }
-.users-empty{ font-size:.9rem; color:rgba(0,0,0,.65); }
-.users-note{ font-size:.85rem; color:rgba(0,0,0,.65); }
 
-.date-help{ font-size:.85rem; color:rgba(0,0,0,.65); }
+.users-box::-webkit-scrollbar{
+  width:10px;
+}
+.users-box::-webkit-scrollbar-thumb{
+  background:rgba(242,46,46,.35);
+  border-radius:999px;
+}
+.users-box::-webkit-scrollbar-track{
+  background:rgba(13,13,13,.05);
+  border-radius:999px;
+}
 
-.request-box{
-  border:1px solid rgba(0,0,0,.12);
+.users-empty{
+  font-size:.92rem;
+  color:rgba(13,13,13,.65);
+}
+
+.form-check{
+  padding:.4rem 0 .4rem 1.9rem;
   border-radius:12px;
-  padding:14px;
-  background:#f8f9fa;
+  transition:var(--ws-transition);
 }
-.recurrence-preview{
-  font-size:.9rem;
-  color:rgba(0,0,0,.72);
+
+.form-check:hover{
+  background:rgba(242,46,46,.05);
 }
-.recurrence-preview b{ color:#000; }
+
+.form-check-input{
+  width:1.1rem;
+  height:1.1rem;
+  border:1.5px solid rgba(13,13,13,.38);
+  cursor:pointer;
+}
+
+.form-check-input:checked{
+  background-color:var(--ws-red-2);
+  border-color:var(--ws-red-2);
+}
+
+.form-check-input:focus{
+  box-shadow:0 0 0 .18rem rgba(242,46,46,.12);
+}
+
+.form-check-label{
+  color:var(--ws-dark);
+  font-weight:600;
+  cursor:pointer;
+}
 
 /* =========================================================
-   UI: Ocultar bloque de Estado (solo UI)
+   Request / recurrence box
 ========================================================= */
-.ws-hidden-ui{ display:none !important; }
+.request-box{
+  border:1px solid rgba(13,13,13,.12);
+  border-radius:18px;
+  padding:16px;
+  background:
+    linear-gradient(180deg, rgba(242,242,242,.92) 0%, #ffffff 100%);
+  box-shadow:var(--ws-shadow-soft);
+}
+
+.recurrence-preview b{
+  color:var(--ws-red-1);
+  font-weight:900;
+}
+
+/* =========================================================
+   Alerts
+========================================================= */
+.alert{
+  border:none;
+  border-radius:16px;
+  box-shadow:var(--ws-shadow-soft);
+}
+
+.alert-info{
+  background:linear-gradient(180deg, rgba(242,114,114,.15) 0%, rgba(242,242,242,.98) 100%);
+  color:var(--ws-dark);
+}
+
+.alert-warning{
+  background:linear-gradient(180deg, rgba(242,46,46,.14) 0%, rgba(242,242,242,.98) 100%);
+  color:var(--ws-dark);
+}
+
+.alert-danger{
+  background:linear-gradient(180deg, rgba(242,5,5,.14) 0%, rgba(242,242,242,.98) 100%);
+  color:var(--ws-dark);
+}
+
+.alert-success{
+  background:linear-gradient(180deg, rgba(242,114,114,.18) 0%, rgba(242,242,242,.98) 100%);
+  color:var(--ws-dark);
+}
+
+/* =========================================================
+   Badges
+========================================================= */
+.badge.bg-dark{
+  background:linear-gradient(135deg, var(--ws-dark) 0%, #303030 100%) !important;
+  border-radius:999px;
+  padding:.5rem .75rem;
+}
+
+/* =========================================================
+   Botones
+========================================================= */
+.btn-black{
+  background:linear-gradient(135deg, var(--ws-dark) 0%, var(--ws-red-2) 100%);
+  color:#fff;
+  border:none;
+  border-radius:14px;
+  padding:.72rem 1.15rem;
+  font-weight:900;
+  letter-spacing:.2px;
+  transition:var(--ws-transition);
+  box-shadow:0 15px 30px -18px rgba(13,13,13,.38);
+}
+.btn-black:hover{
+  color:#fff;
+  transform:translateY(-1px);
+  box-shadow:0 18px 34px -18px rgba(242,46,46,.28);
+  filter:brightness(1.02);
+}
+.btn-black:focus{
+  color:#fff;
+  box-shadow:0 0 0 .22rem rgba(242,46,46,.15);
+}
+
+.btn-black-outline{
+  background:#fff;
+  color:var(--ws-dark);
+  border:1px solid rgba(13,13,13,.18);
+  border-radius:14px;
+  padding:.72rem 1.15rem;
+  font-weight:800;
+  transition:var(--ws-transition);
+}
+.btn-black-outline:hover{
+  background:var(--ws-dark);
+  border-color:var(--ws-dark);
+  color:#fff;
+  transform:translateY(-1px);
+}
+
+.ws-submit-wrap{
+  border-top:1px solid rgba(13,13,13,.08);
+  margin-top:1.4rem;
+  padding-top:1.1rem;
+}
+
+/* =========================================================
+   Hidden UI
+========================================================= */
+.ws-hidden-ui{
+  display:none !important;
+}
+
+/* =========================================================
+   Flatpickr
+========================================================= */
+.flatpickr-calendar{
+  border:none !important;
+  border-radius:18px !important;
+  overflow:hidden !important;
+  box-shadow:0 20px 45px -25px rgba(13,13,13,.35) !important;
+}
+
+.flatpickr-months{
+  background:linear-gradient(135deg, var(--ws-dark) 0%, var(--ws-red-2) 100%) !important;
+}
+
+.flatpickr-current-month,
+.flatpickr-monthDropdown-months,
+.flatpickr-weekday,
+.flatpickr-prev-month,
+.flatpickr-next-month{
+  color:#fff !important;
+  fill:#fff !important;
+}
+
+.flatpickr-day.selected,
+.flatpickr-day.startRange,
+.flatpickr-day.endRange{
+  background:var(--ws-red-2) !important;
+  border-color:var(--ws-red-2) !important;
+}
+
+.flatpickr-day.today{
+  border-color:var(--ws-red-2) !important;
+}
+
+.flatpickr-time input:hover,
+.flatpickr-time .flatpickr-am-pm:hover{
+  background:rgba(242,46,46,.08) !important;
+}
+
+/* =========================================================
+   Modal
+========================================================= */
+.modal-content{
+  border:none;
+  border-radius:22px;
+  overflow:hidden;
+  box-shadow:0 28px 55px -26px rgba(13,13,13,.40);
+}
+
+.modal-header{
+  border:none;
+  padding:1rem 1.15rem;
+}
+
+.modal-header.bg-dark{
+  background:linear-gradient(135deg, var(--ws-dark) 0%, var(--ws-red-2) 100%) !important;
+}
+
+.modal-title{
+  font-weight:900;
+}
+
+.modal-body{
+  padding:1.2rem;
+  background:linear-gradient(180deg, #fff 0%, var(--ws-light) 100%);
+}
+
+.modal-footer{
+  border:none;
+  padding:1rem 1.15rem 1.15rem;
+  background:linear-gradient(180deg, #fff 0%, #fafafa 100%);
+}
+
+/* =========================================================
+   Responsive
+========================================================= */
+@media (max-width: 767.98px){
+  .ws-page-hero{
+    padding:1.1rem;
+  }
+
+  .ws-main-card .card-body{
+    padding:1rem;
+  }
+
+  .ws-section{
+    padding:.9rem;
+  }
+}
 </style>
 
-<div class="container py-4">
+<div class="container py-4 ws-activity-page">
 
-  <div class="d-flex align-items-center justify-content-between mb-4 flex-wrap gap-2">
-    <h3 class="fw-bold mb-0">
-      <?= $isEdit ? 'Editar / Reasignar Actividad' : 'Crear Actividad' ?>
-    </h3>
+  <!-- =========================================================
+       Header visual
+  ========================================================= -->
+  <div class="ws-page-hero">
+    <div class="d-flex flex-wrap align-items-center justify-content-between gap-3">
+      <div>
+        <h3 class="ws-page-title">
+          <?= $isEdit ? 'Editar / Reasignar Actividad' : 'Crear Actividad' ?>
+        </h3>
+        <div class="ws-page-subtitle">
+          Gestión visual y operativa de actividades con el estilo corporativo del sistema.
+        </div>
+      </div>
+
+      <div class="ws-top-pill">
+        <?= $isEdit ? 'Modo edición' : 'Nueva actividad' ?>
+      </div>
+    </div>
   </div>
 
   <?php if (!empty($error)): ?>
@@ -271,337 +678,346 @@ if (!$isEdit) {
     <div class="alert alert-success"><?= esc($success) ?></div>
   <?php endif; ?>
 
-  <form method="post" action="<?= $formAction ?>" class="card shadow-sm p-4" id="taskForm">
-    <?= csrf_field() ?>
-
-    <!-- =========================================================
-         Hidden reales que el backend espera
-         ========================================================= -->
-
-    <!-- Prioridad real (hidden) -->
-    <input type="hidden" name="id_prioridad" id="id_prioridad" value="<?= (int)$oldPrioridad ?>">
-
-    <!-- ✅ Estado real (hidden) - SIEMPRE 2 (En proceso) -->
-    <input type="hidden" name="id_estado_tarea" value="<?= (int)$fixedEstadoId ?>">
-
-    <!-- ✅ Fechas reales (hidden) -->
-    <input type="hidden" name="fecha_inicio" id="fecha_inicio" value="<?= esc($oldInicioDb) ?>">
-    <input type="hidden" name="fecha_fin"    id="fecha_fin"    value="<?= esc($oldFinDb) ?>">
-
-    <!-- ✅ Campos para solicitud a revisión (date_change/cancel) -->
-    <input type="hidden" name="review_action" id="review_action" value="">
-    <input type="hidden" name="review_reason" id="review_reason" value="">
-    <input type="hidden" name="review_requested_fecha_fin" id="review_requested_fecha_fin" value="">
-
-    <div class="row g-4">
-
-      <div class="col-md-6">
-        <label class="form-label fw-semibold">División</label>
-        <input type="text" class="form-control"
-               value="<?= esc($divisionUsuario['nombre_division'] ?? '—') ?>" disabled>
-      </div>
-
-      <div class="col-md-6">
-        <label class="form-label fw-semibold">Nombre de la actividad</label>
-        <input type="text" name="titulo" class="form-control"
-               value="<?= esc($oldTitulo) ?>" required>
-      </div>
-
-      <div class="col-md-3">
-        <label class="form-label fw-semibold">Prioridad</label>
-        <select id="id_prioridad_ui" class="form-select" disabled>
-          <option value="">Prioridad Automática</option>
-          <?php foreach (($prioridades ?? []) as $p): ?>
-            <option value="<?= (int)$p['id_prioridad'] ?>"
-              <?= ((int)$p['id_prioridad'] === (int)$oldPrioridad ? 'selected' : '') ?>>
-              <?= esc($p['nombre_prioridad']) ?>
-            </option>
-          <?php endforeach; ?>
-        </select>
-        <small class="text-muted" style="font-size:.85rem;">Prioridad automática por fecha fin.</small>
-      </div>
-
-      <!-- ✅ Estado: OCULTO en UI, pero siempre se envía hidden -->
-      <div class="col-md-3 ws-hidden-ui">
-        <label class="form-label fw-semibold">Estado</label>
-        <select class="form-select" disabled>
-          <option value="<?= (int)$fixedEstadoId ?>" selected><?= esc($fixedEstadoLabel) ?></option>
-        </select>
-      </div>
-
-      <div class="col-md-3">
-        <label class="form-label fw-semibold">Área</label>
-
-        <?php if ($lockAreaSelect): ?>
-          <input type="hidden" name="id_area" value="<?= (int)$oldArea ?>">
-          <input type="text" class="form-control"
-                 value="<?= esc($areaNameLocked !== '' ? $areaNameLocked : 'Área asignada por tu perfil') ?>"
-                 disabled>
-        <?php else: ?>
-          <select name="id_area" id="id_area" class="form-select" required>
-            <option value="">-- Selecciona --</option>
-            <?php foreach (($areasDivision ?? []) as $a): ?>
-              <option value="<?= (int)$a['id_area'] ?>"
-                <?= ((int)$a['id_area'] === $oldArea ? 'selected' : '') ?>>
-                <?= esc($a['nombre_area']) ?>
-              </option>
-            <?php endforeach; ?>
-          </select>
-        <?php endif; ?>
-      </div>
-
-      <div class="col-md-6">
-        <label class="form-label fw-semibold">Asignar a</label>
-
-        <?php if ($assignMode === 'self'): ?>
-          <div class="users-box">
-            <div class="form-check">
-              <input class="form-check-input" type="checkbox" checked disabled>
-              <label class="form-check-label">
-                Tú (Autoasignación)
-              </label>
-            </div>
-
-            <input type="hidden" name="asignado_a[]" value="<?= (int)$currentUserId ?>">
-          </div>
-        <?php else: ?>
-          <div id="assigneeBox" class="users-box">
-            <div class="users-empty">Selecciona un área para cargar usuarios.</div>
-          </div>
-
-          <?php if ($isEdit): ?>
-            <div class="users-note mt-2">
-              Nota: si desmarcas un usuario y guardas, su actividad quedará en estado <b>Cancelada</b> para ese usuario.
-            </div>
-          <?php endif; ?>
-        <?php endif; ?>
-      </div>
-
-      <?php if ($isEdit): ?>
-        <div class="col-12">
-          <div class="alert alert-info mb-0">
-            <b>Edición de fechas:</b> puedes actualizar la fecha de esta actividad <b>máximo <?= (int)$maxDateEdits ?></b> veces.
-            <br>
-            <b>Ediciones restantes:</b> <span class="badge bg-dark"><?= (int)$remainingEdits ?></span>
-            <br>
-            <small class="text-muted">
-              * El contador se consume <b>solo cuando el cambio de fecha es aprobado</b>.
-            </small>
-          </div>
-        </div>
-      <?php endif; ?>
+  <form method="post" action="<?= $formAction ?>" class="card ws-main-card" id="taskForm">
+    <div class="card-body">
+      <?= csrf_field() ?>
 
       <!-- =========================================================
-           FECHAS (UI) - ACTIVIDAD INDIVIDUAL
+           Hidden reales que el backend espera
       ========================================================= -->
-      <div class="col-md-3">
-        <label class="form-label fw-semibold">Fecha inicio</label>
+      <input type="hidden" name="id_prioridad" id="id_prioridad" value="<?= (int)$oldPrioridad ?>">
+      <input type="hidden" name="id_estado_tarea" value="<?= (int)$fixedEstadoId ?>">
+      <input type="hidden" name="fecha_inicio" id="fecha_inicio" value="<?= esc($oldInicioDb) ?>">
+      <input type="hidden" name="fecha_fin"    id="fecha_fin"    value="<?= esc($oldFinDb) ?>">
+      <input type="hidden" name="review_action" id="review_action" value="">
+      <input type="hidden" name="review_reason" id="review_reason" value="">
+      <input type="hidden" name="review_requested_fecha_fin" id="review_requested_fecha_fin" value="">
 
-        <input type="text"
-               id="fecha_inicio_ui"
-               class="form-control"
-               placeholder="Ej: 24/02/2026 09:15 AM"
-               autocomplete="off"
-               required>
+      <div class="row g-4">
 
-        <div class="date-help mt-1">
-          <?= $isEdit ? 'Fecha inicio fija (no editable).' : 'No se permiten días anteriores a hoy.' ?>
-        </div>
-      </div>
-
-      <div class="col-md-3">
-        <label class="form-label fw-semibold">Fecha fin</label>
-
-        <input type="text"
-               id="fecha_fin_ui"
-               class="form-control"
-               placeholder="Ej: 24/02/2026 11:00 AM"
-               autocomplete="off"
-               required>
-
-        <div class="date-help mt-1">
-          <?php if ($isEdit && $assignMode === 'self'): ?>
-            Fecha fin bloqueada. Usa <b>Solicitar cambio de fecha</b>.
-          <?php else: ?>
-            Debe ser igual o mayor a inicio. <?= $isEdit ? '' : 'No se permiten días anteriores a hoy.' ?>
-          <?php endif; ?>
-        </div>
-      </div>
-
-      <!-- ✅ Solicitud de cambio de fecha (solo EDITAR + SELF) -->
-      <?php if ($isEdit && $assignMode === 'self'): ?>
-        <div class="col-12">
-          <div class="request-box">
-            <div class="d-flex align-items-center justify-content-between flex-wrap gap-2">
-              <div>
-                <b>Solicitudes a revisión</b>
-                <div class="text-muted small">
-                  Solo tú (asignado) puedes solicitar cambio de fecha con motivo.
-                </div>
-              </div>
-
-              <button type="button"
-                      class="btn btn-black"
-                      id="btnOpenDateChange"
-                      <?= ($remainingEdits <= 0 ? 'disabled' : '') ?>>
-                Solicitar cambio de fecha
-              </button>
-            </div>
-
-            <?php if ($remainingEdits <= 0): ?>
-              <div class="text-danger small mt-2">
-                ⚠️ No puedes solicitar más cambios de fecha (límite alcanzado).
-              </div>
-            <?php endif; ?>
-          </div>
-        </div>
-      <?php endif; ?>
-
-      <?php if (!$isEdit): ?>
         <!-- =========================================================
-             RECURRENCIA (SOLO CREAR)
-             ✅ Cambios:
-             - Semanas fijas: 1
-             - repeat_until fijo: start_date + 6
-             - rec_start_date no permite días anteriores
-             - Reordenar días (Mié...Mar)
+             Datos generales
         ========================================================= -->
         <div class="col-12">
-          <div class="request-box">
-            <div class="d-flex align-items-center justify-content-between flex-wrap gap-2">
-              <div>
-                <b>Repetir esta actividad</b>
-                <div class="text-muted small">
-                  Activa solo si esta actividad se repite diariamente o por ciertos días de la semana.
-                </div>
+          <div class="ws-section">
+            <h5 class="ws-section-title">Información general</h5>
+
+            <div class="row g-4">
+              <div class="col-md-6">
+                <label class="form-label">División</label>
+                <input type="text" class="form-control"
+                       value="<?= esc($divisionUsuario['nombre_division'] ?? '—') ?>" disabled>
               </div>
 
-              <div class="form-check form-switch m-0">
-                <input class="form-check-input" type="checkbox" id="recurrence_enabled" name="recurrence_enabled" value="1">
-                <label class="form-check-label" for="recurrence_enabled">Activar</label>
+              <div class="col-md-6">
+                <label class="form-label">Nombre de la actividad</label>
+                <input type="text" name="titulo" class="form-control"
+                       value="<?= esc($oldTitulo) ?>" required>
               </div>
-            </div>
 
-            <div id="recurrence_panel" class="mt-3" style="display:none;">
-              <div class="row g-3">
+              <div class="col-md-3">
+                <label class="form-label">Prioridad</label>
+                <select id="id_prioridad_ui" class="form-select" disabled>
+                  <option value="">Prioridad Automática</option>
+                  <?php foreach (($prioridades ?? []) as $p): ?>
+                    <option value="<?= (int)$p['id_prioridad'] ?>"
+                      <?= ((int)$p['id_prioridad'] === (int)$oldPrioridad ? 'selected' : '') ?>>
+                      <?= esc($p['nombre_prioridad']) ?>
+                    </option>
+                  <?php endforeach; ?>
+                </select>
+                <small class="text-muted d-block mt-1">La prioridad se calcula automáticamente por la fecha fin.</small>
+              </div>
 
-                <div class="col-md-4">
-                  <label class="form-label fw-semibold">Tipo</label>
-                  <select class="form-select" id="repeat_type" name="repeat_type">
-                    <option value="daily">Diaria (todos los días)</option>
-                    <option value="weekly">Semanal (días específicos)</option>
+              <!-- Estado fijo oculto -->
+              <div class="col-md-3 ws-hidden-ui">
+                <label class="form-label">Estado</label>
+                <select class="form-select" disabled>
+                  <option value="<?= (int)$fixedEstadoId ?>" selected><?= esc($fixedEstadoLabel) ?></option>
+                </select>
+              </div>
+
+              <div class="col-md-3">
+                <label class="form-label">Área</label>
+
+                <?php if ($lockAreaSelect): ?>
+                  <input type="hidden" name="id_area" value="<?= (int)$oldArea ?>">
+                  <input type="text" class="form-control"
+                         value="<?= esc($areaNameLocked !== '' ? $areaNameLocked : 'Área asignada por tu perfil') ?>"
+                         disabled>
+                <?php else: ?>
+                  <select name="id_area" id="id_area" class="form-select" required>
+                    <option value="">-- Selecciona --</option>
+                    <?php foreach (($areasDivision ?? []) as $a): ?>
+                      <option value="<?= (int)$a['id_area'] ?>"
+                        <?= ((int)$a['id_area'] === $oldArea ? 'selected' : '') ?>>
+                        <?= esc($a['nombre_area']) ?>
+                      </option>
+                    <?php endforeach; ?>
                   </select>
-                </div>
+                <?php endif; ?>
+              </div>
 
-                <!-- ✅ Semanas FIJAS: 1 -->
-                <div class="col-md-4">
-                  <label class="form-label fw-semibold">Número de semanas</label>
+              <div class="col-md-6">
+                <label class="form-label">Asignar a</label>
 
-                  <!-- Visible readonly (para que el usuario vea), pero no editable -->
-                  <input type="number"
-                         class="form-control"
-                         id="weeks_count_ui"
-                         value="1"
-                         readonly>
+                <?php if ($assignMode === 'self'): ?>
+                  <div class="users-box">
+                    <div class="form-check">
+                      <input class="form-check-input" type="checkbox" checked disabled>
+                      <label class="form-check-label">
+                        Tú (Autoasignación)
+                      </label>
+                    </div>
 
-                  <!-- Real que se envía al backend -->
-                  <input type="hidden" id="weeks_count" name="weeks_count" value="1">
-
-                  <div class="text-muted small mt-1">Fijo: 1 semana.</div>
-                </div>
-
-                <!-- ✅ Repeat until FIJO: start_date + 6 -->
-                <div class="col-md-4">
-                  <label class="form-label fw-semibold">Repetir hasta</label>
-                  <input type="date" class="form-control" id="repeat_until" name="repeat_until" value="" readonly>
-                  <div class="text-muted small mt-1">Fijo: 1 semana desde la fecha inicio serie.</div>
-                </div>
-
-                <div class="col-md-4">
-                  <label class="form-label fw-semibold">Fecha inicio serie</label>
-                  <input type="date" class="form-control" id="rec_start_date" name="rec_start_date"
-                         value="<?= esc($recStartDateDefault) ?>"
-                         min="<?= esc($recStartDateDefault) ?>">
-                  <div class="text-muted small mt-1">No se permiten días anteriores.</div>
-                </div>
-
-                <div class="col-md-4">
-                  <label class="form-label fw-semibold">Hora inicio</label>
-                  <input type="time" class="form-control" id="rec_start_time" name="rec_start_time" value="<?= esc($recStartTimeDefault) ?>">
-                </div>
-
-                <div class="col-md-4">
-                  <label class="form-label fw-semibold">Hora fin</label>
-                  <input type="time" class="form-control" id="rec_end_time" name="rec_end_time" value="<?= esc($recEndTimeDefault) ?>">
-                </div>
-
-                <!-- Días (solo weekly) -->
-                <div class="col-md-12" id="days_of_week_wrap" style="display:none;">
-                  <label class="form-label fw-semibold mb-1">Días de la semana</label>
-
-                  <!-- ✅ SOLO CAMBIO DE ORDEN: Mié, Jue, Vie, Sáb, Dom, Lun, Mar -->
-                  <div class="d-flex flex-wrap gap-3">
-                    <label class="form-check m-0">
-                      <input class="form-check-input" type="checkbox" name="days_of_week[]" value="3">
-                      <span class="form-check-label">Mié</span>
-                    </label>
-                    <label class="form-check m-0">
-                      <input class="form-check-input" type="checkbox" name="days_of_week[]" value="4">
-                      <span class="form-check-label">Jue</span>
-                    </label>
-                    <label class="form-check m-0">
-                      <input class="form-check-input" type="checkbox" name="days_of_week[]" value="5">
-                      <span class="form-check-label">Vie</span>
-                    </label>
-                    <label class="form-check m-0">
-                      <input class="form-check-input" type="checkbox" name="days_of_week[]" value="6">
-                      <span class="form-check-label">Sáb</span>
-                    </label>
-                    <label class="form-check m-0">
-                      <input class="form-check-input" type="checkbox" name="days_of_week[]" value="7">
-                      <span class="form-check-label">Dom</span>
-                    </label>
-                    <label class="form-check m-0">
-                      <input class="form-check-input" type="checkbox" name="days_of_week[]" value="1">
-                      <span class="form-check-label">Lun</span>
-                    </label>
-                    <label class="form-check m-0">
-                      <input class="form-check-input" type="checkbox" name="days_of_week[]" value="2">
-                      <span class="form-check-label">Mar</span>
-                    </label>
+                    <input type="hidden" name="asignado_a[]" value="<?= (int)$currentUserId ?>">
+                  </div>
+                <?php else: ?>
+                  <div id="assigneeBox" class="users-box">
+                    <div class="users-empty">Selecciona un área para cargar usuarios.</div>
                   </div>
 
-                  <div class="text-muted small mt-2">
-                    * Si escoges “Semanal”, debes marcar al menos un día.
-                  </div>
-                </div>
-
-                <div class="col-12">
-                  <div class="recurrence-preview" id="recurrence_preview"></div>
-                  <div class="text-muted small mt-1" id="recurrence_hint"></div>
-                </div>
-
+                  <?php if ($isEdit): ?>
+                    <div class="users-note mt-2">
+                      Nota: si desmarcas un usuario y guardas, su actividad quedará en estado <b>Cancelada</b> para ese usuario.
+                    </div>
+                  <?php endif; ?>
+                <?php endif; ?>
               </div>
             </div>
           </div>
         </div>
-      <?php endif; ?>
 
-      <div class="col-12">
-        <label class="form-label fw-semibold">Descripción de la actividad</label>
-        <textarea name="descripcion" class="form-control" rows="3"><?= esc($oldDesc) ?></textarea>
+        <!-- =========================================================
+             Límite edición
+        ========================================================= -->
+        <?php if ($isEdit): ?>
+          <div class="col-12">
+            <div class="alert alert-info mb-0">
+              <b>Edición de fechas:</b> puedes actualizar la fecha de esta actividad <b>máximo <?= (int)$maxDateEdits ?></b> veces.
+              <br>
+              <b>Ediciones restantes:</b> <span class="badge bg-dark"><?= (int)$remainingEdits ?></span>
+              <br>
+              <small class="text-muted">
+                * El contador se consume <b>solo cuando el cambio de fecha es aprobado</b>.
+              </small>
+            </div>
+          </div>
+        <?php endif; ?>
+
+        <!-- =========================================================
+             Fechas individuales
+        ========================================================= -->
+        <div class="col-12">
+          <div class="ws-section">
+            <h5 class="ws-section-title">Programación de actividad</h5>
+
+            <div class="row g-4">
+              <div class="col-md-3">
+                <label class="form-label">Fecha inicio</label>
+
+                <input type="text"
+                       id="fecha_inicio_ui"
+                       class="form-control"
+                       placeholder="Ej: 24/02/2026 09:15 AM"
+                       autocomplete="off"
+                       required>
+
+                <div class="date-help mt-2">
+                  <?= $isEdit ? 'Fecha inicio fija (no editable).' : 'No se permiten días anteriores a hoy.' ?>
+                </div>
+              </div>
+
+              <div class="col-md-3">
+                <label class="form-label">Fecha fin</label>
+
+                <input type="text"
+                       id="fecha_fin_ui"
+                       class="form-control"
+                       placeholder="Ej: 24/02/2026 11:00 AM"
+                       autocomplete="off"
+                       required>
+
+                <div class="date-help mt-2">
+                  <?php if ($isEdit && $assignMode === 'self'): ?>
+                    Fecha fin bloqueada. Usa <b>Solicitar cambio de fecha</b>.
+                  <?php else: ?>
+                    Debe ser igual o mayor a inicio. <?= $isEdit ? '' : 'No se permiten días anteriores a hoy.' ?>
+                  <?php endif; ?>
+                </div>
+              </div>
+
+              <?php if ($isEdit && $assignMode === 'self'): ?>
+                <div class="col-12">
+                  <div class="request-box">
+                    <div class="d-flex align-items-center justify-content-between flex-wrap gap-2">
+                      <div>
+                        <b>Solicitudes a revisión</b>
+                        <div class="text-muted small">
+                          Solo tú (asignado) puedes solicitar cambio de fecha con motivo.
+                        </div>
+                      </div>
+
+                      <button type="button"
+                              class="btn btn-black"
+                              id="btnOpenDateChange"
+                              <?= ($remainingEdits <= 0 ? 'disabled' : '') ?>>
+                        Solicitar cambio de fecha
+                      </button>
+                    </div>
+
+                    <?php if ($remainingEdits <= 0): ?>
+                      <div class="text-danger small mt-2">
+                        ⚠️ No puedes solicitar más cambios de fecha (límite alcanzado).
+                      </div>
+                    <?php endif; ?>
+                  </div>
+                </div>
+              <?php endif; ?>
+            </div>
+          </div>
+        </div>
+
+        <!-- =========================================================
+             Recurrencia
+        ========================================================= -->
+        <?php if (!$isEdit): ?>
+          <div class="col-12">
+            <div class="ws-section">
+              <h5 class="ws-section-title">Actividades diarias / recurrencia</h5>
+
+              <div class="request-box">
+                <div class="d-flex align-items-center justify-content-between flex-wrap gap-2">
+                  <div>
+                    <b>Repetir esta actividad</b>
+                    <div class="text-muted small">
+                      Activa esta opción solo si la actividad se repite diariamente o por días específicos.
+                    </div>
+                  </div>
+
+                  <div class="form-check form-switch m-0">
+                    <input class="form-check-input" type="checkbox" id="recurrence_enabled" name="recurrence_enabled" value="1">
+                    <label class="form-check-label" for="recurrence_enabled">Activar</label>
+                  </div>
+                </div>
+
+                <div id="recurrence_panel" class="mt-3" style="display:none;">
+                  <div class="row g-3">
+
+                    <div class="col-md-4">
+                      <label class="form-label">Tipo</label>
+                      <select class="form-select" id="repeat_type" name="repeat_type">
+                        <option value="daily">Diaria (todos los días)</option>
+                        <option value="weekly">Semanal (días específicos)</option>
+                      </select>
+                    </div>
+
+                    <div class="col-md-4">
+                      <label class="form-label">Número de semanas</label>
+                      <input type="number"
+                             class="form-control"
+                             id="weeks_count_ui"
+                             value="1"
+                             readonly>
+                      <input type="hidden" id="weeks_count" name="weeks_count" value="1">
+                      <div class="text-muted small mt-1">Fijo: 1 semana.</div>
+                    </div>
+
+                    <div class="col-md-4">
+                      <label class="form-label">Repetir hasta</label>
+                      <input type="date" class="form-control" id="repeat_until" name="repeat_until" value="" readonly>
+                      <div class="text-muted small mt-1">Fijo: 1 semana desde la fecha inicio serie.</div>
+                    </div>
+
+                    <div class="col-md-4">
+                      <label class="form-label">Fecha inicio serie</label>
+                      <input type="date" class="form-control" id="rec_start_date" name="rec_start_date"
+                             value="<?= esc($recStartDateDefault) ?>"
+                             min="<?= esc($recStartDateDefault) ?>">
+                      <div class="text-muted small mt-1">No se permiten días anteriores.</div>
+                    </div>
+
+                    <div class="col-md-4">
+                      <label class="form-label">Hora inicio</label>
+                      <input type="time" class="form-control" id="rec_start_time" name="rec_start_time" value="<?= esc($recStartTimeDefault) ?>">
+                    </div>
+
+                    <div class="col-md-4">
+                      <label class="form-label">Hora fin</label>
+                      <input type="time" class="form-control" id="rec_end_time" name="rec_end_time" value="<?= esc($recEndTimeDefault) ?>">
+                    </div>
+
+                    <div class="col-md-12" id="days_of_week_wrap" style="display:none;">
+                      <label class="form-label mb-2">Días de la semana</label>
+
+                      <div class="d-flex flex-wrap gap-3">
+                        <label class="form-check m-0">
+                          <input class="form-check-input" type="checkbox" name="days_of_week[]" value="3">
+                          <span class="form-check-label">Mié</span>
+                        </label>
+                        <label class="form-check m-0">
+                          <input class="form-check-input" type="checkbox" name="days_of_week[]" value="4">
+                          <span class="form-check-label">Jue</span>
+                        </label>
+                        <label class="form-check m-0">
+                          <input class="form-check-input" type="checkbox" name="days_of_week[]" value="5">
+                          <span class="form-check-label">Vie</span>
+                        </label>
+                        <label class="form-check m-0">
+                          <input class="form-check-input" type="checkbox" name="days_of_week[]" value="6">
+                          <span class="form-check-label">Sáb</span>
+                        </label>
+                        <label class="form-check m-0">
+                          <input class="form-check-input" type="checkbox" name="days_of_week[]" value="7">
+                          <span class="form-check-label">Dom</span>
+                        </label>
+                        <label class="form-check m-0">
+                          <input class="form-check-input" type="checkbox" name="days_of_week[]" value="1">
+                          <span class="form-check-label">Lun</span>
+                        </label>
+                        <label class="form-check m-0">
+                          <input class="form-check-input" type="checkbox" name="days_of_week[]" value="2">
+                          <span class="form-check-label">Mar</span>
+                        </label>
+                      </div>
+
+                      <div class="text-muted small mt-2">
+                        * Si escoges “Semanal”, debes marcar al menos un día.
+                      </div>
+                    </div>
+
+                    <div class="col-12">
+                      <div class="recurrence-preview" id="recurrence_preview"></div>
+                      <div class="text-muted small mt-1" id="recurrence_hint"></div>
+                    </div>
+
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        <?php endif; ?>
+
+        <!-- =========================================================
+             Descripción
+        ========================================================= -->
+        <div class="col-12">
+          <div class="ws-section">
+            <h5 class="ws-section-title">Descripción</h5>
+            <label class="form-label">Descripción de la actividad</label>
+            <textarea name="descripcion" class="form-control" rows="3"><?= esc($oldDesc) ?></textarea>
+          </div>
+        </div>
       </div>
 
+      <div class="d-flex justify-content-end gap-2 ws-submit-wrap">
+        <a href="<?= site_url('tareas/gestionar') ?>" class="btn btn-black-outline">Cancelar</a>
+
+        <button type="submit" class="btn btn-black" id="btnSubmitMain">
+          <?= $isEdit ? 'Guardar cambios' : 'Asignar' ?>
+        </button>
+      </div>
     </div>
-
-    <div class="d-flex justify-content-end gap-2 mt-4">
-      <a href="<?= site_url('tareas/gestionar') ?>" class="btn btn-black-outline">Cancelar</a>
-
-      <button type="submit" class="btn btn-black" id="btnSubmitMain">
-        <?= $isEdit ? 'Guardar cambios' : 'Asignar' ?>
-      </button>
-    </div>
-
   </form>
 </div>
 
@@ -624,7 +1040,7 @@ if (!$isEdit) {
 
         <div class="row g-3">
           <div class="col-md-6">
-            <label class="form-label fw-semibold">Nueva fecha fin solicitada</label>
+            <label class="form-label">Nueva fecha fin solicitada</label>
             <input type="text"
                    id="requested_end_ui"
                    class="form-control"
@@ -636,7 +1052,7 @@ if (!$isEdit) {
           </div>
 
           <div class="col-md-6">
-            <label class="form-label fw-semibold">Motivo del cambio (obligatorio)</label>
+            <label class="form-label">Motivo del cambio (obligatorio)</label>
             <textarea id="requested_reason_ui"
                       class="form-control"
                       rows="4"
@@ -1114,7 +1530,6 @@ document.getElementById('taskForm').addEventListener('submit', (e) => {
 
 /* =========================================================
    Recurrencia UI (CREATE)
-   ✅ Semanas fijas a 1 y repeat_until fijo a start+6.
 ========================================================= */
 (function initRecurrenceUi(){
   const chkRec   = document.getElementById('recurrence_enabled');
@@ -1131,8 +1546,8 @@ document.getElementById('taskForm').addEventListener('submit', (e) => {
   const preview  = document.getElementById('recurrence_preview');
   const hint     = document.getElementById('recurrence_hint');
 
-  const weeksHidden = document.getElementById('weeks_count'); // hidden real
-  const weeksUi = document.getElementById('weeks_count_ui');  // visible readonly
+  const weeksHidden = document.getElementById('weeks_count');
+  const weeksUi = document.getElementById('weeks_count_ui');
 
   if (!chkRec || !panel || !typeEl || !untilEl || !daysWrap || !preview || !hint) return;
   if (!recStartDateEl || !recStartTimeEl || !recEndTimeEl) return;
@@ -1185,17 +1600,14 @@ document.getElementById('taskForm').addEventListener('submit', (e) => {
     const startDay = parseYmd(recStartDateEl.value);
     if (!startDay) return;
 
-    // ✅ 1 semana fija = start + 6 días
     const until = new Date(startDay.getTime());
     until.setDate(until.getDate() + 6);
     untilEl.value = toYmd(until);
 
-    // asegurar min (por seguridad)
     const today = new Date();
     today.setHours(0,0,0,0);
     const todayYmd = toYmd(today);
 
-    // min no menor a hoy
     recStartDateEl.min = todayYmd;
     if (recStartDateEl.value && recStartDateEl.value < todayYmd) {
       alert('No puedes seleccionar un día anterior al de hoy.');
@@ -1246,11 +1658,9 @@ document.getElementById('taskForm').addEventListener('submit', (e) => {
     showHideDays();
 
     if (chkRec.checked) {
-      // ✅ fijar semanas = 1
       weeksHidden.value = '1';
       weeksUi.value = '1';
 
-      // bloquear edición de weeks y repeat_until (ya readonly en HTML)
       computeRepeatUntilFixed();
 
       setUiDisabledForRecurrence(true);
@@ -1275,9 +1685,7 @@ document.getElementById('taskForm').addEventListener('submit', (e) => {
   chkRec.addEventListener('change', showHidePanel);
   typeEl.addEventListener('change', () => { showHideDays(); updatePreview(); });
 
-  // ✅ al cambiar fecha inicio serie: recalcular repeat_until fijo
   recStartDateEl.addEventListener('change', function(){
-    // seguridad: no permitir pasado
     const today = new Date();
     today.setHours(0,0,0,0);
     const todayYmd = toYmd(today);
@@ -1295,7 +1703,6 @@ document.getElementById('taskForm').addEventListener('submit', (e) => {
   recStartTimeEl.addEventListener('input', () => { ensureRecurrenceHiddenDates(); updatePreview(); });
   recEndTimeEl.addEventListener('input', () => { ensureRecurrenceHiddenDates(); updatePreview(); });
 
-  // Inicial
   computeRepeatUntilFixed();
   showHidePanel();
 
@@ -1305,11 +1712,9 @@ document.getElementById('taskForm').addEventListener('submit', (e) => {
   form.addEventListener('submit', function(e){
     if (!chkRec.checked) return;
 
-    // Validar start date
     const startDay = parseYmd(recStartDateEl.value);
     if (!startDay) { alert('Debes seleccionar la fecha inicio serie.'); e.preventDefault(); return; }
 
-    // Validar no pasado
     const today = new Date();
     today.setHours(0,0,0,0);
     if (startDay.getTime() < today.getTime()){
@@ -1318,10 +1723,8 @@ document.getElementById('taskForm').addEventListener('submit', (e) => {
       return;
     }
 
-    // Asegurar until fijo
     computeRepeatUntilFixed();
 
-    // Validar horas
     const st = String(recStartTimeEl.value || '').trim();
     const et = String(recEndTimeEl.value || '').trim();
     if (!st || !et) { alert('Debes seleccionar la hora inicio y hora fin.'); e.preventDefault(); return; }
@@ -1335,7 +1738,6 @@ document.getElementById('taskForm').addEventListener('submit', (e) => {
       return;
     }
 
-    // Validación weekly: al menos 1 día
     if (String(typeEl.value || 'daily') === 'weekly') {
       const checkedDays = document.querySelectorAll('input[name="days_of_week[]"]:checked');
       if (!checkedDays || checkedDays.length === 0) {
@@ -1345,7 +1747,6 @@ document.getElementById('taskForm').addEventListener('submit', (e) => {
       }
     }
 
-    // Asegurar hidden fechas
     ensureRecurrenceHiddenDates();
 
     if (!fechaInicioHidden.value || !fechaFinHidden.value) {

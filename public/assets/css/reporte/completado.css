@@ -1,0 +1,202 @@
+:root{
+
+  --primary:#6366f1;
+  --danger:#ef4444;
+  --success:#22c55e;
+
+  --bg:#f4f6fb;
+  --card:#ffffff;
+
+  --border:#e5e7eb;
+  --text:#1f2937;
+  --text-light:#6b7280;
+
+  --radius:10px;
+  --shadow:0 8px 24px rgba(0,0,0,0.08);
+}
+body{
+font-family:system-ui,Segoe UI,Roboto;
+background:#f4f6fb;
+color:#1f2937;
+}
+
+h2{
+margin-bottom:20px;
+}
+
+/* PANEL */
+
+.panel-resumen{
+
+display:flex;
+justify-content:space-between;
+align-items:center;
+
+background:white;
+
+padding:20px;
+border-radius:10px;
+
+box-shadow:0 8px 24px rgba(0,0,0,0.06);
+
+margin-bottom:20px;
+
+}
+
+/* CONTADOR */
+
+.contador{
+
+text-align:center;
+}
+
+.numero{
+
+font-size:42px;
+font-weight:700;
+color:#ef4444;
+
+}
+
+.label{
+
+font-size:14px;
+color:#6b7280;
+
+}
+
+/* BOTONES */
+
+.acciones-globales{
+
+display:flex;
+gap:10px;
+
+}
+
+button{
+
+border:none;
+padding:10px 14px;
+
+border-radius:8px;
+
+cursor:pointer;
+
+font-size:14px;
+
+background:#6366f1;
+color:white;
+
+}
+
+button:hover{
+
+opacity:.9;
+
+}
+
+/* TABLA */
+
+.tabla-contenedor{
+
+background:white;
+
+padding:20px;
+
+border-radius:10px;
+
+box-shadow:0 8px 24px rgba(0,0,0,0.06);
+
+}
+
+table{
+
+width:100%;
+border-collapse:collapse;
+
+}
+
+thead{
+
+background:#f9fafb;
+
+}
+
+th,td{
+
+padding:10px;
+border-bottom:1px solid #e5e7eb;
+text-align:left;
+
+}
+
+tbody tr:hover{
+
+background:#f9fafb;
+
+}
+
+/* TELEFONO */
+
+.telefono{
+
+font-family:monospace;
+color:#6366f1;
+
+}
+.contactado{
+
+opacity:.5;
+background:#f9fafb;
+
+}
+
+/* BOTON WHATSAPP */
+
+.btn-wsp{
+
+background:#22c55e;
+
+}
+
+/* ALERTA */
+
+.alert-ok{
+
+background:#ecfdf5;
+border:1px solid #bbf7d0;
+
+padding:15px;
+border-radius:8px;
+
+color:#166534;
+
+width:fit-content;
+
+}
+/* BUSCADOR */
+
+.buscador{
+
+width:260px;
+
+padding:10px 12px;
+
+border:1px solid #e5e7eb;
+border-radius:8px;
+
+margin-bottom:15px;
+
+font-size:14px;
+
+}
+
+.buscador:focus{
+
+outline:none;
+border-color:#6366f1;
+
+box-shadow:0 0 0 2px rgba(99,102,241,0.15);
+
+}

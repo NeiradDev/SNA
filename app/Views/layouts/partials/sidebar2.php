@@ -160,7 +160,7 @@ if (!function_exists('sidebar_has_permission')) {
 
           <ul class="sub-menu">
             <li>
-              <a href="<?= base_url('tareas/asignar') ?>">Asignar</a>
+              <a href="<?= base_url('tareas/asignar') ?>">Crear tarea</a>
             </li>
           </ul>
         </li>

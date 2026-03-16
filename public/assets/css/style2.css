@@ -6,7 +6,7 @@
   --text-color: #32363B;
   --icon-color: #32363B;
   --icon-menu-color: #707780;
-  --menu-color: #707780;
+  --menu-color: #64686c;
 
   --text-selected-color: #355cc0;
   --background-selected: #EBF0FF;
@@ -273,7 +273,8 @@ main.menu-toggle {
 /* Estilo sub items */
 .sub-menu li a {
   font-size: 0.9rem;
-  padding: 0.5rem 0;
+  padding: 0.3rem 0;
+  padding-left: 3rem;
   display: block;
   color: var(--menu-color);
 }

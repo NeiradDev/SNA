@@ -1,0 +1,292 @@
+/* ===============================
+   VARIABLES
+================================*/
+
+:root{
+
+  --primary:#6366f1;
+  --primary-dark:#4f46e5;
+
+  --secondary:#06b6d4;
+  --success:#22c55e;
+  --warning:#f59e0b;
+  --danger:#ef4444;
+
+  --bg:#f4f6fb;
+  --card:#ffffff;
+
+  --border:#e5e7eb;
+  --text:#1f2937;
+  --text-light:#6b7280;
+
+  --radius:10px;
+  --shadow:0 8px 24px rgba(0,0,0,0.08);
+}
+
+/* ===============================
+   BASE
+================================*/
+
+body{
+  background:var(--bg);
+  font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+  color:var(--text);
+}
+
+h2{
+  font-weight:600;
+  margin-bottom:20px;
+}
+
+/* ===============================
+   BOTONES
+================================*/
+
+button{
+  border:none;
+  padding:8px 14px;
+  border-radius:8px;
+  font-size:14px;
+  cursor:pointer;
+  background:var(--primary);
+  color:white;
+  transition:all .2s ease;
+}
+
+button:hover{
+  background:var(--primary-dark);
+  transform:translateY(-1px);
+}
+
+button[type="submit"]{
+  background:var(--success);
+}
+
+button[type="submit"]:hover{
+  background:#16a34a;
+}
+
+a{
+  text-decoration:none;
+  color:var(--primary);
+}
+
+/* ===============================
+   SELECT
+================================*/
+
+select{
+  padding:8px 10px;
+  border-radius:8px;
+  border:1px solid var(--border);
+  background:white;
+}
+
+/* ===============================
+   ALERTAS
+================================*/
+
+div[role="alert"],
+div:has(> strong):has(> span){
+  padding:12px;
+  border-radius:8px;
+  margin-bottom:15px;
+}
+
+div:has(> strong){
+  background:#ecfdf5;
+  border:1px solid #bbf7d0;
+}
+
+/* ===============================
+   CARDS SUPERIORES
+================================*/
+
+form#baseCargoForm{
+  background:var(--card);
+  padding:18px;
+  border-radius:var(--radius);
+  box-shadow:var(--shadow);
+  margin-bottom:20px;
+}
+
+/* ===============================
+   TARJETAS DE ESTADÍSTICA
+================================*/
+
+form#permissionForm > div:first-of-type{
+  display:flex;
+  gap:10px;
+  margin-bottom:20px;
+}
+
+form#permissionForm > div:first-of-type > div{
+  background:var(--card);
+  padding:16px;
+  border-radius:var(--radius);
+  box-shadow:var(--shadow);
+  flex:1;
+  text-align:center;
+}
+
+form#permissionForm > div:first-of-type > div div:first-child{
+  font-size:12px;
+  color:var(--text-light);
+}
+
+form#permissionForm > div:first-of-type > div div:last-child{
+  font-size:20px;
+  font-weight:600;
+}
+
+/* ===============================
+   CONTROLES SUPERIORES
+================================*/
+
+form#permissionForm > div:nth-child(3){
+  display:flex;
+  justify-content:space-between;
+  margin-bottom:20px;
+}
+
+form#permissionForm > div:nth-child(3) button{
+  background:var(--secondary);
+}
+
+form#permissionForm > div:nth-child(3) button:hover{
+  background:#0891b2;
+}
+
+/* ===============================
+   MODULOS
+================================*/
+
+[data-module-card]{
+
+  background:var(--card);
+  border-radius:var(--radius);
+  padding:18px;
+  margin-bottom:16px;
+  box-shadow:var(--shadow);
+
+  border-left:4px solid var(--primary);
+
+  transition:all .2s ease;
+}
+
+[data-module-card]:hover{
+  transform:translateY(-2px);
+}
+
+/* header módulo */
+
+[data-module-card] > div:first-child{
+  display:flex;
+  justify-content:space-between;
+  align-items:center;
+  margin-bottom:10px;
+}
+
+[data-module-card] h5{
+  margin:0;
+  font-size:16px;
+}
+
+/* badge cantidad permisos */
+
+[data-module-card] > div:first-child span{
+  background:var(--primary);
+  color:white;
+  font-size:12px;
+  padding:4px 8px;
+  border-radius:6px;
+}
+
+/* botones modulo */
+
+[data-module-card] > div:nth-child(2){
+  display:flex;
+  gap:8px;
+  margin-bottom:12px;
+}
+
+[data-module-card] > div:nth-child(2) button{
+  background:#eef2ff;
+  color:var(--primary);
+}
+
+[data-module-card] > div:nth-child(2) button:hover{
+  background:#e0e7ff;
+}
+
+/* ===============================
+   LISTA DE PERMISOS
+================================*/
+
+[id^="module-body-"]{
+
+  display:grid;
+  grid-template-columns:repeat(auto-fill,minmax(260px,1fr));
+  gap:10px;
+}
+
+[id^="module-body-"] > div{
+
+  background:#f9fafb;
+  border:1px solid var(--border);
+  border-radius:8px;
+  padding:10px;
+
+  transition:all .15s ease;
+}
+
+[id^="module-body-"] > div:hover{
+  border-color:var(--primary);
+}
+
+/* ===============================
+   CHECKBOX CUSTOM
+================================*/
+
+input[type="checkbox"]{
+
+  width:16px;
+  height:16px;
+  accent-color:var(--primary);
+  cursor:pointer;
+}
+
+/* ===============================
+   PERMISO TEXTO
+================================*/
+
+label div:first-child{
+  font-weight:600;
+}
+
+label div:nth-child(2){
+  font-size:12px;
+  color:var(--secondary);
+}
+
+label div:nth-child(3){
+  font-size:12px;
+  color:var(--text-light);
+}
+
+/* ===============================
+   FOOTER
+================================*/
+
+form#permissionForm > div:last-child{
+
+  margin-top:20px;
+  padding:16px;
+  background:var(--card);
+  border-radius:var(--radius);
+  box-shadow:var(--shadow);
+
+  display:flex;
+  justify-content:space-between;
+  align-items:center;
+}

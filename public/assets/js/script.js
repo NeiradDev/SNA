@@ -34,4 +34,4 @@ toggles.forEach(toggle => {
         parent.classList.toggle('active');
     });
 });
-/*LOGICA PLAN DE BATALLA */
+/*LOGICA PLAN DE BATALLA */ 

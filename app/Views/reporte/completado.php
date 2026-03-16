@@ -1,6 +1,13 @@
 <?= $this->extend('layouts/main') ?>
 
+<?= $this->section('styles') ?>
+
+  <link rel="stylesheet" href="<?= base_url('assets/css/reporte/completado.css') ?>">
+
+<?= $this->endSection() ?>
+
 <?= $this->section('contenido') ?>
+<div class="panel-resumen">
 
 <?php
 /**
@@ -614,4 +621,7 @@ Muchas gracias por su atención y pronta gestión.</textarea>
   });
 </script>
 
+<?= $this->endSection() ?>
+<?= $this->section('scripts') ?>
+<script src="<?= base_url('assets/js/reporte/completado.js') ?>"></script>
 <?= $this->endSection() ?>

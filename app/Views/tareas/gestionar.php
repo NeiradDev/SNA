@@ -977,6 +977,194 @@ $decisionNotifications = $decisionNotifications ?? [];
       grid-template-columns: 1fr;
     }
   }
+
+  .ws-evidence-box {
+    border: 2px solid rgba(242, 5, 5, .18);
+    border-radius: 18px;
+    background: linear-gradient(180deg, rgba(242, 41, 58, .08) 0%, rgba(255, 255, 255, .98) 100%);
+    padding: 14px;
+    box-shadow: 0 14px 28px -22px rgba(242, 5, 5, .28);
+  }
+
+  .ws-evidence-head {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    margin-bottom: 10px;
+  }
+
+  .ws-evidence-icon {
+    width: 42px;
+    height: 42px;
+    border-radius: 14px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex: 0 0 42px;
+    background: linear-gradient(135deg, var(--ws-red-2) 0%, var(--ws-red-1) 100%);
+    color: #fff;
+    box-shadow: 0 10px 18px -14px rgba(242, 5, 5, .45);
+  }
+
+  .ws-evidence-title {
+    margin: 0;
+    font-size: 1rem;
+    font-weight: 900;
+    color: var(--ws-dark);
+    line-height: 1.2;
+  }
+
+  .ws-evidence-subtitle {
+    margin: .18rem 0 0;
+    color: rgba(13, 13, 13, .72);
+    font-size: .84rem;
+    line-height: 1.4;
+  }
+
+  .ws-evidence-switch-card {
+    margin-top: 12px;
+    border: 1px solid rgba(13, 13, 13, .08);
+    border-radius: 16px;
+    background: #fff;
+    padding: 12px 14px;
+  }
+
+  .ws-evidence-switch-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 14px;
+    flex-wrap: wrap;
+  }
+
+  .ws-evidence-switch-text {
+    flex: 1 1 260px;
+  }
+
+  .ws-evidence-switch-label {
+    display: block;
+    font-size: 1rem;
+    font-weight: 900;
+    color: var(--ws-red-3);
+    margin-bottom: .18rem;
+  }
+
+  .ws-evidence-switch-help {
+    margin: 0;
+    font-size: .84rem;
+    color: rgba(13, 13, 13, .72);
+    line-height: 1.45;
+  }
+
+  .ws-evidence-switch-help strong {
+    color: var(--ws-red-3);
+  }
+
+  .ws-evidence-toggle-wrap {
+    flex: 0 0 auto;
+  }
+
+  .ws-evidence-toggle.form-check.form-switch {
+    margin: 0;
+    padding-left: 0;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .ws-evidence-toggle .form-check-input {
+    float: none;
+    margin-left: 0;
+    margin-top: 0;
+    width: 4rem;
+    height: 2rem;
+    cursor: pointer;
+    border: none;
+    background-color: rgba(13, 13, 13, .18);
+    box-shadow: inset 0 0 0 1px rgba(13, 13, 13, .06);
+    transition: all .22s ease;
+  }
+
+  .ws-evidence-toggle .form-check-input:checked {
+    background-color: var(--ws-red-2);
+    box-shadow: 0 0 0 .22rem rgba(242, 5, 5, .12);
+  }
+
+  .ws-evidence-toggle .form-check-input:focus {
+    box-shadow: 0 0 0 .22rem rgba(242, 5, 5, .12);
+  }
+
+  .ws-evidence-toggle-state {
+    min-width: 102px;
+    text-align: center;
+    font-size: .80rem;
+    font-weight: 900;
+    border-radius: 999px;
+    padding: .5rem .8rem;
+    transition: all .22s ease;
+    border: 1px solid rgba(13, 13, 13, .08);
+    background: #f3f3f3;
+    color: rgba(13, 13, 13, .78);
+  }
+
+  .ws-evidence-toggle-state.is-on {
+    background: linear-gradient(135deg, var(--ws-red-2) 0%, var(--ws-red-1) 100%);
+    color: #fff;
+    border-color: transparent;
+    box-shadow: 0 10px 18px -15px rgba(242, 5, 5, .45);
+  }
+
+  .ws-evidence-guide {
+    margin-top: 12px;
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 10px;
+  }
+
+  .ws-evidence-guide-item {
+    border-radius: 14px;
+    padding: 10px 12px;
+    background: rgba(255, 255, 255, .92);
+    border: 1px solid rgba(13, 13, 13, .07);
+  }
+
+  .ws-evidence-guide-item strong {
+    display: block;
+    margin-bottom: 4px;
+    color: var(--ws-red-3);
+    font-size: .83rem;
+  }
+
+  .ws-evidence-guide-item span {
+    display: block;
+    color: rgba(13, 13, 13, .72);
+    font-size: .80rem;
+    line-height: 1.4;
+  }
+
+  .ws-evidence-fields {
+    margin-top: 14px;
+    padding: 14px;
+    border-radius: 16px;
+    background: rgba(242, 41, 58, .05);
+    border: 1px dashed rgba(242, 5, 5, .22);
+  }
+
+  .ws-evidence-fields .form-label {
+    color: var(--ws-red-3);
+    font-weight: 900 !important;
+  }
+
+  .ws-evidence-inline-note {
+    margin-top: 10px;
+    border-radius: 12px;
+    padding: 10px 12px;
+    font-size: .82rem;
+    line-height: 1.4;
+    background: rgba(255, 193, 7, .13);
+    border: 1px solid rgba(255, 193, 7, .24);
+    color: #5c4300;
+  }
 </style>
 
 <div class="container py-3 ws-page-wrap">
@@ -2236,28 +2424,71 @@ $decisionNotifications = $decisionNotifications ?? [];
       </div>
 
       <div class="modal-body">
-        <div class="mb-3">
-          <div class="form-check form-switch">
-            <input class="form-check-input" type="checkbox" id="hasEvidenceCheck">
-            <label class="form-check-label fw-semibold" for="hasEvidenceCheck">
-              ¿Tiene evidencia?
-            </label>
-          </div>
-          <small class="text-muted">
-            Si marcas esta opción, podrás adjuntar un enlace de Drive para que el supervisor lo revise.
-          </small>
-        </div>
+        <div class="ws-evidence-box">
+          <div class="ws-evidence-head">
+            <div class="ws-evidence-icon" aria-hidden="true">
+              <svg viewBox="0 0 16 16" width="20" height="20" fill="currentColor">
+                <path d="M4.502 1a1.5 1.5 0 0 0-1.415 1H2.5A1.5 1.5 0 0 0 1 3.5v8A1.5 1.5 0 0 0 2.5 13h11a1.5 1.5 0 0 0 1.5-1.5v-8A1.5 1.5 0 0 0 13.5 2h-.587A1.5 1.5 0 0 0 11.498 1h-6.996zM4.5 2a.5.5 0 0 1 .5.5V3h6V2.5a.5.5 0 0 1 .5-.5h1a.5.5 0 0 1 .5.5V3h.5a.5.5 0 0 1 .5.5v8a.5.5 0 0 1-.5.5h-11a.5.5 0 0 1-.5-.5v-8a.5.5 0 0 1 .5-.5H3v-.5a.5.5 0 0 1 .5-.5h1z" />
+                <path d="M8 5a3 3 0 1 0 0 6 3 3 0 0 0 0-6zm0 1a2 2 0 1 1 0 4 2 2 0 0 1 0-4z" />
+              </svg>
+            </div>
 
-        <div id="evidenceFieldsWrap" style="display:none;">
-          <div class="mb-3">
-            <label for="evidenceUrlInput" class="form-label fw-semibold">Link de evidencia</label>
-            <input type="url" id="evidenceUrlInput" class="form-control" placeholder="https://drive.google.com/...">
-            <small class="text-muted">Pega aquí el enlace de Drive o cualquier URL válida.</small>
+            <div>
+              <h6 class="ws-evidence-title">Antes de continuar, indica si realmente tienes evidencia</h6>
+              <p class="ws-evidence-subtitle">
+                Esto ayuda a que tu supervisor revise mejor la solicitud. Activa la opción <b>solo si de verdad vas a adjuntar un enlace</b>.
+              </p>
+            </div>
           </div>
 
-          <div class="mb-0">
-            <label for="evidenceNoteInput" class="form-label fw-semibold">Observación (opcional)</label>
-            <textarea id="evidenceNoteInput" class="form-control" rows="3" placeholder="Ejemplo: evidencias del trabajo realizado, fotos, documento, etc."></textarea>
+          <div class="ws-evidence-switch-card">
+            <div class="ws-evidence-switch-row">
+              <div class="ws-evidence-switch-text">
+                <label class="ws-evidence-switch-label" for="hasEvidenceCheck">
+                  ¿Tiene evidencia?
+                </label>
+                <p class="ws-evidence-switch-help">
+                  <strong>Si sí tienes evidencia, activa el botón.</strong><br>
+                  <strong>Si no tienes evidencia, déjalo apagado y continúa normal.</strong>
+                </p>
+              </div>
+
+              <div class="ws-evidence-toggle-wrap">
+                <div class="form-check form-switch ws-evidence-toggle">
+                  <input class="form-check-input" type="checkbox" id="hasEvidenceCheck">
+                  <span id="evidenceToggleState" class="ws-evidence-toggle-state">Sin evidencia</span>
+                </div>
+              </div>
+            </div>
+
+            <div class="ws-evidence-inline-note">
+              No lo actives por error. Si lo enciendes, el sistema entenderá que vas a enviar un enlace de respaldo.
+            </div>
+          </div>
+
+          <div class="ws-evidence-guide">
+            <div class="ws-evidence-guide-item">
+              <strong>Activa esta opción cuando:</strong>
+              <span>Tengas fotos, documentos, videos o archivos en Drive que respalden lo realizado.</span>
+            </div>
+
+            <div class="ws-evidence-guide-item">
+              <strong>Déjala apagada cuando:</strong>
+              <span>No tengas enlace todavía o la actividad no requiere respaldo visual o documental.</span>
+            </div>
+          </div>
+
+          <div id="evidenceFieldsWrap" class="ws-evidence-fields" style="display:none;">
+            <div class="mb-3">
+              <label for="evidenceUrlInput" class="form-label fw-semibold">Link de evidencia</label>
+              <input type="url" id="evidenceUrlInput" class="form-control" placeholder="https://drive.google.com/...">
+              <small class="text-muted">Pega aquí el enlace de Drive o cualquier URL válida.</small>
+            </div>
+
+            <div class="mb-0">
+              <label for="evidenceNoteInput" class="form-label fw-semibold">Observación (opcional)</label>
+              <textarea id="evidenceNoteInput" class="form-control" rows="3" placeholder="Ejemplo: fotos del trabajo realizado, documento firmado, capturas, etc."></textarea>
+            </div>
           </div>
         </div>
       </div>
@@ -2586,6 +2817,7 @@ $decisionNotifications = $decisionNotifications ?? [];
       $('#evidenceUrlInput').val('');
       $('#evidenceNoteInput').val('');
       $('#evidenceFieldsWrap').hide();
+      $('#evidenceToggleState').text('Sin evidencia').removeClass('is-on');
     }
 
     function resetUpdateOnlyTimeModal() {
@@ -2594,14 +2826,27 @@ $decisionNotifications = $decisionNotifications ?? [];
       $('#updateOnlyTimeInput').val('');
     }
 
-    $(document).on('change', '#hasEvidenceCheck', function() {
-      const checked = $(this).is(':checked');
+    function updateEvidenceVisualState() {
+      const checked = $('#hasEvidenceCheck').is(':checked');
+
       $('#evidenceFieldsWrap').toggle(checked);
 
-      if (!checked) {
+      if (checked) {
+        $('#evidenceToggleState')
+          .text('Con evidencia')
+          .addClass('is-on');
+      } else {
+        $('#evidenceToggleState')
+          .text('Sin evidencia')
+          .removeClass('is-on');
+
         $('#evidenceUrlInput').val('');
         $('#evidenceNoteInput').val('');
       }
+    }
+
+    $(document).on('change', '#hasEvidenceCheck', function() {
+      updateEvidenceVisualState();
     });
 
     function getUrlExtension(url) {

@@ -216,7 +216,60 @@ class TareaService
         }
         return $a->format('Y-m-d H:i') === $b->format('Y-m-d H:i');
     }
+    /**
+     * ==================================================
+     * HELPERS: CADUCIDAD Y CAMBIO SOLO DE HORA
+     * ==================================================
+     */
 
+    /**
+     * Devuelve true si la tarea quedó vencida comparando fecha_fin con ahora.
+     */
+    private function isExpiredByNow(?string $fechaFinRaw): bool
+    {
+        $endDt = $this->parseLocalDateTime($fechaFinRaw);
+
+        if (!$endDt) {
+            return false;
+        }
+
+        $now = new \DateTimeImmutable('now', $this->tz());
+
+        return $endDt < $now;
+    }
+
+    /**
+     * Construye una nueva fecha_fin manteniendo la MISMA FECHA
+     * y reemplazando solo la HORA.
+     *
+     * Ejemplo:
+     * - fecha original: 2026-03-17 10:00:00
+     * - newTime: 16:30
+     * => 2026-03-17 16:30:00
+     */
+    private function replaceOnlyTimeOnDate(?string $originalDateTimeRaw, ?string $newTime): ?\DateTimeImmutable
+    {
+        $originalDateTimeRaw = trim((string)$originalDateTimeRaw);
+        $newTime             = trim((string)$newTime);
+
+        if ($originalDateTimeRaw === '' || $newTime === '') {
+            return null;
+        }
+
+        // Hora esperada: HH:ii
+        if (!preg_match('/^\d{2}:\d{2}$/', $newTime)) {
+            return null;
+        }
+
+        $originalDt = $this->parseLocalDateTime($originalDateTimeRaw);
+        if (!$originalDt) {
+            return null;
+        }
+
+        [$hour, $minute] = explode(':', $newTime);
+
+        return $originalDt->setTime((int)$hour, (int)$minute, 0);
+    }
     // ==================================================
     // HELPERS: EXISTENCIA DE COLUMNAS (DB)
     // ==================================================
@@ -1157,57 +1210,146 @@ class TareaService
     // ==================================================
     // EVENTOS FULLCALENDAR
     // ==================================================
-    public function getCalendarEvents(int $userId, string $scope): array
+    public function getCalendarEvents(int $userId, string $scope, ?int $currentUserAreaId = null): array
     {
         $db = Database::connect();
 
-        $where = ($scope === 'assigned')
-            ? 't.asignado_por = ?'
-            : 't.asignado_a = ?';
+        // ==================================================
+        // Si no viene el área actual, intentamos leerla de sesión
+        // ==================================================
+        if ($currentUserAreaId === null) {
+            $currentUserAreaId = (int) (session()->get('id_area') ?? 0);
+        }
 
-        $sql = <<<SQL
-SELECT
-    t.id_tarea,
-    t.titulo,
-    t.descripcion,
-    t.id_estado_tarea,
-    p.nombre_prioridad,
-    e.nombre_estado,
-    t.fecha_inicio,
-    t.fecha_fin,
-    t.asignado_a,
-    t.asignado_por,
-    ua.nombres || ' ' || ua.apellidos AS asignado_a_nombre,
-    up.nombres || ' ' || up.apellidos AS asignado_por_nombre,
-    ar.nombre_area
-FROM public.tareas t
-JOIN public.prioridad p    ON p.id_prioridad = t.id_prioridad
-JOIN public.estado_tarea e ON e.id_estado_tarea = t.id_estado_tarea
-LEFT JOIN public."USER" ua ON ua.id_user = t.asignado_a
-LEFT JOIN public."USER" up ON up.id_user = t.asignado_por
-LEFT JOIN public.area ar   ON ar.id_area = t.id_area
-WHERE {$where}
-ORDER BY t.fecha_inicio DESC
-SQL;
+        // ==================================================
+        // Normalizar scope
+        // ==================================================
+        $scope = trim(strtolower($scope));
+        if ($scope === '') {
+            $scope = 'mine';
+        }
 
-        $rows = $db->query($sql, [$userId])->getResultArray();
+        // ==================================================
+        // Resolver alcance real del usuario actual
+        // - super
+        // - division
+        // - area
+        // - self
+        // ==================================================
+        $realScope = $this->resolveAssignScope($userId, $currentUserAreaId);
 
+        // ==================================================
+        // Obtener IDs del equipo según el scope real
+        // ==================================================
+        $teamUserIds = $this->getTeamUserIdsFromScope($realScope, $userId);
+
+        // ==================================================
+        // Builder base
+        // ==================================================
+        $builder = $db->table('public.tareas t');
+
+        $builder->select([
+            't.id_tarea',
+            't.titulo',
+            't.descripcion',
+            't.id_estado_tarea',
+            't.fecha_inicio',
+            't.fecha_fin',
+            't.asignado_a',
+            't.asignado_por',
+            'p.nombre_prioridad',
+            'e.nombre_estado',
+            'ar.nombre_area',
+            "ua.nombres || ' ' || ua.apellidos AS asignado_a_nombre",
+            "up.nombres || ' ' || up.apellidos AS asignado_por_nombre",
+        ], false);
+
+        $builder->join('public.prioridad p', 'p.id_prioridad = t.id_prioridad');
+        $builder->join('public.estado_tarea e', 'e.id_estado_tarea = t.id_estado_tarea');
+        $builder->join('public."USER" ua', 'ua.id_user = t.asignado_a', 'left');
+        $builder->join('public."USER" up', 'up.id_user = t.asignado_por', 'left');
+        $builder->join('public.area ar', 'ar.id_area = t.id_area', 'left');
+
+        // ==================================================
+        // Aplicar filtro según scope seleccionado en la UI
+        // ==================================================
+        switch ($scope) {
+            case 'assigned':
+                // Actividades asignadas por mí
+                $builder->where('t.asignado_por', $userId);
+                break;
+
+            case 'team':
+                // Solo actividades del equipo/subordinados
+                if (empty($teamUserIds)) {
+                    return [];
+                }
+
+                $builder->whereIn('t.asignado_a', $teamUserIds);
+                break;
+
+            case 'all':
+                // Mis actividades + equipo
+                $ids = $teamUserIds;
+                $ids[] = $userId;
+
+                $ids = array_values(array_unique(array_filter(
+                    array_map('intval', $ids),
+                    static fn($x) => $x > 0
+                )));
+
+                if (empty($ids)) {
+                    return [];
+                }
+
+                $builder->whereIn('t.asignado_a', $ids);
+                break;
+
+            case 'mine':
+            default:
+                // Solo mis actividades
+                $builder->where('t.asignado_a', $userId);
+                break;
+        }
+
+        // ==================================================
+        // Ordenar resultados
+        // ==================================================
+        $rows = $builder
+            ->orderBy('t.fecha_inicio', 'DESC')
+            ->get()
+            ->getResultArray();
+
+        // ==================================================
+        // Transformar a formato FullCalendar
+        // ==================================================
         $events = [];
 
         foreach ($rows as $r) {
+            $estadoId = (int) ($r['id_estado_tarea'] ?? 0);
+
             $events[] = [
-                'id'    => (string) $r['id_tarea'],
-                'title' => $r['titulo'],
+                'id'    => (string) ($r['id_tarea'] ?? ''),
+                'title' => (string) ($r['titulo'] ?? 'Actividad'),
                 'start' => $r['fecha_inicio'],
                 'end'   => $r['fecha_fin'],
                 'extendedProps' => [
                     'descripcion'         => $r['descripcion'] ?? '',
-                    'prioridad'           => $r['nombre_prioridad'],
-                    'estado'              => $r['nombre_estado'],
-                    'id_estado_tarea'     => (int) $r['id_estado_tarea'],
+                    'prioridad'           => $r['nombre_prioridad'] ?? '',
+                    'estado'              => $r['nombre_estado'] ?? '',
+                    'id_estado_tarea'     => $estadoId,
+
+                    // Para saber desde frontend si ya está cerrada
+                    'is_closed'           => in_array($estadoId, [
+                        $this->estadoRealizada,
+                        $this->estadoNoRealizada,
+                        $this->estadoCancelada,
+                    ], true),
+
                     'area'                => $r['nombre_area'] ?? '',
-                    'asignado_a'          => (int) $r['asignado_a'],
+                    'asignado_a'          => (int) ($r['asignado_a'] ?? 0),
                     'asignado_a_nombre'   => $r['asignado_a_nombre'] ?? '',
+                    'asignado_por'        => (int) ($r['asignado_por'] ?? 0),
                     'asignado_por_nombre' => $r['asignado_por_nombre'] ?? '',
                 ],
             ];
@@ -1810,26 +1952,91 @@ SQL;
     private function markExpiredTasksAsNoRealizada(): int
     {
         try {
-            $db  = Database::connect();
-            $now = (new \DateTimeImmutable('now', $this->tz()))->format('Y-m-d H:i:s');
+            // ==================================================
+            // 1) Conexión y hora actual en zona local
+            // ==================================================
+            $db    = Database::connect();
+            $nowDt = new \DateTimeImmutable('now', $this->tz());
+            $now   = $nowDt->format('Y-m-d H:i:s');
 
+            // ==================================================
+            // 2) Ventana de gracia
+            // --------------------------------------------------
+            // Esta ventana evita que una tarea recién devuelta
+            // desde revisión al estado anterior sea marcada
+            // inmediatamente como "No realizada" antes de que
+            // el frontend abra el modal para actualizar la hora.
+            //
+            // Ejemplo:
+            // - supervisor cancela solicitud
+            // - la tarea vuelve a Pendiente / En proceso
+            // - pero su fecha_fin ya quedó vencida
+            // - si se recarga demasiado rápido, esta función
+            //   podría capturarla enseguida
+            //
+            // Con esta gracia de 2 minutos, si approved_at es
+            // reciente, la tarea NO se toca todavía.
+            // ==================================================
+            $graceCutoff = $nowDt->modify('-2 minutes')->format('Y-m-d H:i:s');
+
+            // ==================================================
+            // 3) Builder base
+            // ==================================================
             $builder = $db->table('public.tareas');
 
+            // ==================================================
+            // 4) Solo tareas ACTIVAS:
+            // - Pendiente
+            // - En proceso
+            //
+            // NO toca:
+            // - Realizada
+            // - No realizada
+            // - Cancelada
+            // - En revisión
+            // ==================================================
             $builder->whereIn('id_estado_tarea', [
                 $this->estadoPendiente,
                 $this->estadoEnProceso,
             ]);
 
+            // ==================================================
+            // 5) Solo tareas que tienen fecha_fin
+            //    y que ya vencieron respecto a "ahora"
+            // ==================================================
             $builder->where('fecha_fin IS NOT NULL', null, false);
             $builder->where('fecha_fin <', $now);
 
+            // ==================================================
+            // 6) Blindaje extra con approved_at
+            // --------------------------------------------------
+            // Si la tabla tiene approved_at, entonces:
+            // - si approved_at es NULL => sí puede marcarse
+            // - si approved_at es viejo (< graceCutoff) => sí puede marcarse
+            // - si approved_at es muy reciente => NO la toca aún
+            //
+            // Esto protege las tareas recién procesadas
+            // desde revisión.
+            // ==================================================
+            if ($this->taskColumnExists('approved_at')) {
+                $builder->groupStart();
+                $builder->where('approved_at IS NULL', null, false);
+                $builder->orWhere('approved_at <', $graceCutoff);
+                $builder->groupEnd();
+            }
+
+            // ==================================================
+            // 7) Payload de cierre automático
+            // ==================================================
             $payload = [
                 'id_estado_tarea' => $this->estadoNoRealizada,
-                // ✅ como quedó cerrada por vencimiento, guardamos completed_at
                 'completed_at'    => $now,
             ];
 
-            // Si existen columnas de revisión, limpiamos por seguridad
+            // ==================================================
+            // 8) Si existen columnas de revisión base,
+            //    limpiar por seguridad
+            // ==================================================
             if ($this->hasReviewFlowColumns()) {
                 $payload['review_requested_state'] = null;
                 $payload['review_requested_at']    = null;
@@ -1837,6 +2044,10 @@ SQL;
                 $payload['approved_at']            = null;
             }
 
+            // ==================================================
+            // 9) Si existen columnas extendidas de revisión,
+            //    también limpiar por seguridad
+            // ==================================================
             if ($this->hasExtendedReviewColumns()) {
                 $payload['review_action']              = null;
                 $payload['review_reason']              = null;
@@ -1845,14 +2056,23 @@ SQL;
                 $payload['review_previous_state']      = null;
             }
 
+            // ==================================================
+            // 10) Ejecutar update masivo
+            // ==================================================
             $builder->update($payload);
 
+            // ==================================================
+            // 11) Retornar número de filas afectadas
+            // ==================================================
             return (int) $db->affectedRows();
         } catch (\Throwable $e) {
+            // ==================================================
+            // 12) Si ocurre un error, devolvemos 0 para no romper
+            //    el flujo de gestión
+            // ==================================================
             return 0;
         }
     }
-
     /**
      * Construye alertas para el modal de vencimiento.
      *
@@ -3940,128 +4160,289 @@ SQL;
         return ['success' => true, 'message' => 'Solicitud enviada a revisión de tu supervisor.'];
     }
     public function reviewBatch(
-    array $taskIds,
-    string $action,
-    int $currentUserId,
-    int $currentUserAreaId
-): array {
+        array $taskIds,
+        string $action,
+        int $currentUserId,
+        int $currentUserAreaId
+    ): array {
 
-    // ==================================================
-    // 0) Validaciones de columnas necesarias
-    // ==================================================
-    if (!$this->hasReviewFlowColumns()) {
-        return $this->reviewColumnsMissingError();
-    }
-
-    if (method_exists($this, 'hasExtendedReviewColumns') && !$this->hasExtendedReviewColumns()) {
-        return [
-            'success' => false,
-            'error'   => 'Faltan columnas extendidas de revisión (review_action, review_reason, review_requested_by, review_requested_fecha_fin, review_previous_state). Ejecuta el ALTER TABLE.',
-        ];
-    }
-
-    // ==================================================
-    // 1) Normalizar IDs
-    // ==================================================
-    $clean = [];
-    foreach ($taskIds as $id) {
-        $n = (int) $id;
-        if ($n > 0) {
-            $clean[] = $n;
+        // ==================================================
+        // 0) Validaciones de columnas necesarias
+        // ==================================================
+        if (!$this->hasReviewFlowColumns()) {
+            return $this->reviewColumnsMissingError();
         }
-    }
-    $clean = array_values(array_unique($clean));
 
-    if (empty($clean)) {
-        return ['success' => false, 'error' => 'No seleccionaste tareas.'];
-    }
+        if (method_exists($this, 'hasExtendedReviewColumns') && !$this->hasExtendedReviewColumns()) {
+            return [
+                'success' => false,
+                'error'   => 'Faltan columnas extendidas de revisión (review_action, review_reason, review_requested_by, review_requested_fecha_fin, review_previous_state). Ejecuta el ALTER TABLE.',
+            ];
+        }
 
-    // ==================================================
-    // 2) Validar acción
-    // ==================================================
-    if (!in_array($action, ['approve', 'reject'], true)) {
-        return ['success' => false, 'error' => 'Acción inválida.'];
-    }
-
-    // ==================================================
-    // 3) Scope para detectar gerencia
-    // ==================================================
-    $scope = $this->resolveAssignScope($currentUserId, $currentUserAreaId);
-
-    $db  = Database::connect();
-    $now = (new \DateTimeImmutable('now', $this->tz()))->format('Y-m-d H:i:s');
-
-    // ==================================================
-    // 4) Transacción
-    // ==================================================
-    $db->transStart();
-
-    try {
-        foreach ($clean as $taskId) {
-
-            // --------------------------------------------------
-            // 4.1) Cargar tarea
-            // --------------------------------------------------
-            $task = $this->tareaModel->find((int) $taskId);
-            if (!$task) {
-                continue;
+        // ==================================================
+        // 1) Normalizar IDs
+        // ==================================================
+        $clean = [];
+        foreach ($taskIds as $id) {
+            $n = (int) $id;
+            if ($n > 0) {
+                $clean[] = $n;
             }
+        }
+        $clean = array_values(array_unique($clean));
 
-            // Solo procesamos si está en revisión
-            if ((int)($task['id_estado_tarea'] ?? 0) !== $this->estadoEnRevision) {
-                continue;
-            }
+        if (empty($clean)) {
+            return ['success' => false, 'error' => 'No seleccionaste tareas.'];
+        }
 
-            // --------------------------------------------------
-            // 4.2) Permisos: SOLO supervisor directo o super
-            // --------------------------------------------------
-            $asignadoA = (int) ($task['asignado_a'] ?? 0);
+        // ==================================================
+        // 2) Validar acción
+        // ==================================================
+        if (!in_array($action, ['approve', 'cancel_request', 'force_not_done'], true)) {
+            return ['success' => false, 'error' => 'Acción inválida.'];
+        }
 
-            $rowSup = $db->query(
-                'SELECT id_supervisor
+        // ==================================================
+        // 3) Scope para detectar gerencia
+        // ==================================================
+        $scope = $this->resolveAssignScope($currentUserId, $currentUserAreaId);
+
+        $db  = Database::connect();
+        $now = (new \DateTimeImmutable('now', $this->tz()))->format('Y-m-d H:i:s');
+
+        /**
+         * ==================================================
+         * Aquí guardaremos tareas que al volver al estado anterior
+         * quedaron vencidas y necesitan actualización de hora.
+         * ==================================================
+         */
+        $expiredTasks = [];
+
+        /**
+         * ==================================================
+         * Contador real de tareas procesadas.
+         * ==================================================
+         */
+        $processed = 0;
+
+        // ==================================================
+        // 4) Transacción
+        // ==================================================
+        $db->transStart();
+
+        try {
+            foreach ($clean as $taskId) {
+
+                // --------------------------------------------------
+                // 4.1) Cargar tarea
+                // --------------------------------------------------
+                $task = $this->tareaModel->find((int) $taskId);
+                if (!$task) {
+                    continue;
+                }
+
+                // Solo procesamos si está en revisión
+                if ((int)($task['id_estado_tarea'] ?? 0) !== $this->estadoEnRevision) {
+                    continue;
+                }
+
+                // --------------------------------------------------
+                // 4.2) Permisos: SOLO supervisor directo o super
+                // --------------------------------------------------
+                $asignadoA = (int) ($task['asignado_a'] ?? 0);
+
+                $rowSup = $db->query(
+                    'SELECT id_supervisor
                  FROM public."USER"
                  WHERE id_user = ?
                  LIMIT 1',
-                [$asignadoA]
-            )->getRowArray();
+                    [$asignadoA]
+                )->getRowArray();
 
-            $assignedSupervisorId = (int) ($rowSup['id_supervisor'] ?? 0);
+                $assignedSupervisorId = (int) ($rowSup['id_supervisor'] ?? 0);
 
-            $isDirectSupervisor = ($assignedSupervisorId > 0 && $assignedSupervisorId === $currentUserId);
-            $isSuperUser        = (($scope['mode'] ?? '') === 'super');
+                $isDirectSupervisor = ($assignedSupervisorId > 0 && $assignedSupervisorId === $currentUserId);
+                $isSuperUser        = (($scope['mode'] ?? '') === 'super');
 
-            if (!$isDirectSupervisor && !$isSuperUser) {
-                continue;
-            }
-
-            // --------------------------------------------------
-            // 4.3) Datos de revisión
-            // --------------------------------------------------
-            $reviewAction = trim((string) ($task['review_action'] ?? ''));
-            $prevState    = (int) ($task['review_previous_state'] ?? 0);
-
-            if ($prevState <= 0) {
-                $prevState = $this->estadoEnProceso;
-            }
-
-            $requestedBy = (int)($task['review_requested_by'] ?? 0);
-            $decision    = ($action === 'reject') ? 'rejected' : 'approved';
-
-            // ==================================================
-            // 4.4) RECHAZAR
-            // ==================================================
-            if ($action === 'reject') {
+                if (!$isDirectSupervisor && !$isSuperUser) {
+                    continue;
+                }
 
                 // --------------------------------------------------
-                // Rechazo de cancelación / cambio de fecha
-                // => volver al estado previo
+                // 4.3) Datos de revisión
                 // --------------------------------------------------
-                if (in_array($reviewAction, ['cancel', 'date_change'], true)) {
+                $reviewAction = trim((string) ($task['review_action'] ?? ''));
+                $prevState    = (int) ($task['review_previous_state'] ?? 0);
+
+                if ($prevState <= 0) {
+                    $prevState = $this->estadoEnProceso;
+                }
+
+                $requestedBy = (int)($task['review_requested_by'] ?? 0);
+                $decision    = ($action === 'cancel_request') ? 'rejected' : 'approved';
+
+                // ==================================================
+                // 4.4) CANCELAR SOLICITUD
+                // - Devuelve la tarea al estado anterior
+                // - Limpia la revisión pendiente
+                // - Si quedó vencida, la devolvemos al frontend
+                //   para actualizar solo la hora
+                // ==================================================
+                if ($action === 'cancel_request') {
 
                     $payload = [
                         'id_estado_tarea'            => $prevState,
+                        'review_requested_state'     => null,
+                        'review_requested_at'        => null,
+                        'review_action'              => null,
+                        'review_reason'              => null,
+                        'review_requested_by'        => null,
+                        'review_requested_fecha_fin' => null,
+                        'review_previous_state'      => null,
+                        'approved_by'                => $currentUserId,
+                        'approved_at'                => $now,
+                        'completed_at'               => null,
+                    ];
 
-                        // Limpieza revisión
+                    $db->table('public.tareas')
+                        ->where('id_tarea', (int)$taskId)
+                        ->update($payload);
+
+                    /**
+                     * ============================================
+                     * Verificamos si al volver al estado anterior
+                     * la tarea ya quedó vencida.
+                     *
+                     * OJO:
+                     * Aquí NO la marcamos como no realizada.
+                     * Solo la reportamos al frontend.
+                     * ============================================
+                     */
+                    $taskFechaFin = (string)($task['fecha_fin'] ?? '');
+
+                    if (
+                        !$this->isClosedEstado($prevState)
+                        && $taskFechaFin !== ''
+                        && $this->isExpiredByNow($taskFechaFin)
+                    ) {
+                        $expiredTasks[] = [
+                            'id_tarea'  => (int)$taskId,
+                            'titulo'    => (string)($task['titulo'] ?? 'Actividad'),
+                            'fecha_fin' => $taskFechaFin,
+                            'estado'    => $prevState,
+                            'message'   => 'La tarea volvió a su estado anterior, pero ya está caducada. Debes actualizar solo la hora o marcarla como no realizada.',
+                        ];
+                    }
+
+                    if ($requestedBy > 0) {
+                        $details = [
+                            'id_tarea'            => (int)$taskId,
+                            'titulo'              => (string)($task['titulo'] ?? ''),
+                            'decision'            => 'rejected',
+                            'action'              => 'cancel_request',
+                            'requested_state'     => $task['review_requested_state'] ?? null,
+                            'previous_state'      => $task['review_previous_state'] ?? null,
+                            'requested_fecha_fin' => $task['review_requested_fecha_fin'] ?? null,
+                            'requested_reason'    => $task['review_reason'] ?? null,
+                            'result_estado'       => $payload['id_estado_tarea'] ?? null,
+                            'result_fecha_fin'    => null,
+                        ];
+
+                        $this->insertDecisionLog(
+                            (int)$taskId,
+                            $requestedBy,
+                            (int)$currentUserId,
+                            'rejected',
+                            'cancel_request',
+                            $details
+                        );
+
+                        $this->updateLatestReviewLogDecision(
+                            (int)$taskId,
+                            $requestedBy,
+                            'rejected',
+                            (int)$currentUserId,
+                            null
+                        );
+                    }
+
+                    $processed++;
+                    continue;
+                }
+
+                // ==================================================
+                // 4.5) FORZAR COMO NO REALIZADA
+                // ==================================================
+                if ($action === 'force_not_done') {
+
+                    $payload = [
+                        'id_estado_tarea'            => $this->estadoNoRealizada,
+                        'review_requested_state'     => null,
+                        'review_requested_at'        => null,
+                        'review_action'              => null,
+                        'review_reason'              => null,
+                        'review_requested_by'        => null,
+                        'review_requested_fecha_fin' => null,
+                        'review_previous_state'      => null,
+                        'approved_by'                => $currentUserId,
+                        'approved_at'                => $now,
+                        'completed_at'               => $now,
+                    ];
+
+                    $db->table('public.tareas')
+                        ->where('id_tarea', (int)$taskId)
+                        ->update($payload);
+
+                    if ($requestedBy > 0) {
+                        $details = [
+                            'id_tarea'            => (int)$taskId,
+                            'titulo'              => (string)($task['titulo'] ?? ''),
+                            'decision'            => 'approved',
+                            'action'              => 'force_not_done',
+                            'requested_state'     => $task['review_requested_state'] ?? null,
+                            'previous_state'      => $task['review_previous_state'] ?? null,
+                            'requested_fecha_fin' => $task['review_requested_fecha_fin'] ?? null,
+                            'requested_reason'    => $task['review_reason'] ?? null,
+                            'result_estado'       => $payload['id_estado_tarea'] ?? null,
+                            'result_fecha_fin'    => null,
+                        ];
+
+                        $this->insertDecisionLog(
+                            (int)$taskId,
+                            $requestedBy,
+                            (int)$currentUserId,
+                            'approved',
+                            'force_not_done',
+                            $details
+                        );
+
+                        $this->updateLatestReviewLogDecision(
+                            (int)$taskId,
+                            $requestedBy,
+                            'approved',
+                            (int)$currentUserId,
+                            null
+                        );
+                    }
+
+                    $processed++;
+                    continue;
+                }
+
+                // ==================================================
+                // 4.6) APROBAR
+                // ==================================================
+
+                // --------------------------------------------------
+                // A) Cancelación solicitada => Cancelada
+                // --------------------------------------------------
+                if ($reviewAction === 'cancel') {
+
+                    $payload = [
+                        'id_estado_tarea'            => $this->estadoCancelada,
+                        'completed_at'               => null,
+
                         'review_requested_state'     => null,
                         'review_requested_at'        => null,
                         'review_action'              => null,
@@ -4070,11 +4451,8 @@ SQL;
                         'review_requested_fecha_fin' => null,
                         'review_previous_state'      => null,
 
-                        // Auditoría
                         'approved_by'                => $currentUserId,
                         'approved_at'                => $now,
-
-                        'completed_at'               => null,
                     ];
 
                     $db->table('public.tareas')
@@ -4113,17 +4491,224 @@ SQL;
                         );
                     }
 
+                    $processed++;
                     continue;
                 }
 
                 // --------------------------------------------------
-                // Rechazo legacy => No realizada
+                // B) Cambio de fecha solicitado
+                // SOLO aquí incrementa edit_count
                 // --------------------------------------------------
-                $payload = [
-                    'id_estado_tarea'            => $this->estadoNoRealizada,
+                if ($reviewAction === 'date_change') {
 
+                    $reqFin = trim((string) ($task['review_requested_fecha_fin'] ?? ''));
+
+                    if ($reqFin === '') {
+                        $payload = [
+                            'id_estado_tarea'            => $prevState,
+
+                            'review_requested_state'     => null,
+                            'review_requested_at'        => null,
+                            'review_action'              => null,
+                            'review_reason'              => null,
+                            'review_requested_by'        => null,
+                            'review_requested_fecha_fin' => null,
+                            'review_previous_state'      => null,
+
+                            'approved_by'                => $currentUserId,
+                            'approved_at'                => $now,
+                            'completed_at'               => null,
+                        ];
+
+                        $db->table('public.tareas')
+                            ->where('id_tarea', (int)$taskId)
+                            ->update($payload);
+
+                        if ($requestedBy > 0) {
+                            $details = [
+                                'id_tarea'            => (int)$taskId,
+                                'titulo'              => (string)($task['titulo'] ?? ''),
+                                'decision'            => $decision,
+                                'action'              => $reviewAction,
+                                'requested_state'     => $task['review_requested_state'] ?? null,
+                                'previous_state'      => $task['review_previous_state'] ?? null,
+                                'requested_fecha_fin' => $task['review_requested_fecha_fin'] ?? null,
+                                'requested_reason'    => $task['review_reason'] ?? null,
+                                'result_estado'       => $payload['id_estado_tarea'] ?? null,
+                                'result_fecha_fin'    => null,
+                            ];
+
+                            $this->insertDecisionLog(
+                                (int)$taskId,
+                                $requestedBy,
+                                (int)$currentUserId,
+                                $decision,
+                                $reviewAction,
+                                $details
+                            );
+
+                            $this->updateLatestReviewLogDecision(
+                                (int)$taskId,
+                                $requestedBy,
+                                $decision,
+                                (int)$currentUserId,
+                                null
+                            );
+                        }
+
+                        $processed++;
+                        continue;
+                    }
+
+                    $editCount = (int) ($task['edit_count'] ?? 0);
+
+                    if ($editCount >= 3) {
+                        $payload = [
+                            'id_estado_tarea'            => $prevState,
+
+                            'review_requested_state'     => null,
+                            'review_requested_at'        => null,
+                            'review_action'              => null,
+                            'review_reason'              => null,
+                            'review_requested_by'        => null,
+                            'review_requested_fecha_fin' => null,
+                            'review_previous_state'      => null,
+
+                            'approved_by'                => $currentUserId,
+                            'approved_at'                => $now,
+                            'completed_at'               => null,
+                        ];
+
+                        $db->table('public.tareas')
+                            ->where('id_tarea', (int)$taskId)
+                            ->update($payload);
+
+                        if ($requestedBy > 0) {
+                            $details = [
+                                'id_tarea'            => (int)$taskId,
+                                'titulo'              => (string)($task['titulo'] ?? ''),
+                                'decision'            => 'rejected',
+                                'action'              => $reviewAction,
+                                'requested_state'     => $task['review_requested_state'] ?? null,
+                                'previous_state'      => $task['review_previous_state'] ?? null,
+                                'requested_fecha_fin' => $task['review_requested_fecha_fin'] ?? null,
+                                'requested_reason'    => $task['review_reason'] ?? null,
+                                'result_estado'       => $payload['id_estado_tarea'] ?? null,
+                                'result_fecha_fin'    => null,
+                            ];
+
+                            $this->insertDecisionLog(
+                                (int)$taskId,
+                                $requestedBy,
+                                (int)$currentUserId,
+                                'rejected',
+                                $reviewAction,
+                                $details
+                            );
+
+                            $this->updateLatestReviewLogDecision(
+                                (int)$taskId,
+                                $requestedBy,
+                                'rejected',
+                                (int)$currentUserId,
+                                'Máximo de 3 cambios de fecha alcanzado.'
+                            );
+                        }
+
+                        $processed++;
+                        continue;
+                    }
+
+                    $endDt = $this->parseLocalDateTime($reqFin);
+
+                    $newPriority = (int) ($task['id_prioridad'] ?? 1);
+                    if ($endDt) {
+                        $newPriority = $this->autoPriorityFromEnd($endDt, (int)($task['id_prioridad'] ?? 0));
+                    }
+
+                    $payload = [
+                        'fecha_fin'                  => $endDt ? $this->toDbDateTime($endDt) : $reqFin,
+                        'id_prioridad'               => $newPriority,
+                        'id_estado_tarea'            => $prevState,
+
+                        'review_requested_state'     => null,
+                        'review_requested_at'        => null,
+                        'review_action'              => null,
+                        'review_reason'              => null,
+                        'review_requested_by'        => null,
+                        'review_requested_fecha_fin' => null,
+                        'review_previous_state'      => null,
+
+                        'approved_by'                => $currentUserId,
+                        'approved_at'                => $now,
+                        'completed_at'               => null,
+                    ];
+
+                    if ($this->taskColumnExists('edit_count')) {
+                        $payload['edit_count'] = $editCount + 1;
+                    }
+
+                    $db->table('public.tareas')
+                        ->where('id_tarea', (int)$taskId)
+                        ->update($payload);
+
+                    if ($requestedBy > 0) {
+                        $details = [
+                            'id_tarea'            => (int)$taskId,
+                            'titulo'              => (string)($task['titulo'] ?? ''),
+                            'decision'            => $decision,
+                            'action'              => $reviewAction,
+                            'requested_state'     => $task['review_requested_state'] ?? null,
+                            'previous_state'      => $task['review_previous_state'] ?? null,
+                            'requested_fecha_fin' => $task['review_requested_fecha_fin'] ?? null,
+                            'requested_reason'    => $task['review_reason'] ?? null,
+                            'result_estado'       => $payload['id_estado_tarea'] ?? null,
+                            'result_fecha_fin'    => $payload['fecha_fin'] ?? null,
+                        ];
+
+                        $this->insertDecisionLog(
+                            (int)$taskId,
+                            $requestedBy,
+                            (int)$currentUserId,
+                            $decision,
+                            $reviewAction,
+                            $details
+                        );
+
+                        $this->updateLatestReviewLogDecision(
+                            (int)$taskId,
+                            $requestedBy,
+                            $decision,
+                            (int)$currentUserId,
+                            null
+                        );
+                    }
+
+                    $processed++;
+                    continue;
+                }
+
+                // --------------------------------------------------
+                // C) Legacy / compatibilidad (realizada / no realizada)
+                // --------------------------------------------------
+                $editCount = (int) ($task['edit_count'] ?? 0);
+                $forcedNoRealizada = ($editCount > $this->maxEditsForRealizada);
+
+                $req = (int) ($task['review_requested_state'] ?? 0);
+
+                $finalEstado = in_array($req, [$this->estadoRealizada, $this->estadoNoRealizada], true)
+                    ? $req
+                    : $this->estadoNoRealizada;
+
+                if ($forcedNoRealizada) {
+                    $finalEstado = $this->estadoNoRealizada;
+                }
+
+                $payload = [
+                    'id_estado_tarea'            => $finalEstado,
                     'review_requested_state'     => null,
                     'review_requested_at'        => null,
+
                     'review_action'              => null,
                     'review_reason'              => null,
                     'review_requested_by'        => null,
@@ -4133,7 +4718,9 @@ SQL;
                     'approved_by'                => $currentUserId,
                     'approved_at'                => $now,
 
-                    'completed_at'               => $now,
+                    'completed_at' => in_array($finalEstado, [$this->estadoRealizada, $this->estadoNoRealizada], true)
+                        ? $now
+                        : null,
                 ];
 
                 $db->table('public.tareas')
@@ -4172,359 +4759,58 @@ SQL;
                     );
                 }
 
-                continue;
+                $processed++;
             }
+        } catch (\Throwable $e) {
+            $db->transRollback();
 
-            // ==================================================
-            // 4.5) APROBAR
-            // ==================================================
-
-            // --------------------------------------------------
-            // A) Cancelación solicitada => Cancelada
-            // --------------------------------------------------
-            if ($reviewAction === 'cancel') {
-
-                $payload = [
-                    'id_estado_tarea'            => $this->estadoCancelada,
-                    'completed_at'               => null,
-
-                    'review_requested_state'     => null,
-                    'review_requested_at'        => null,
-                    'review_action'              => null,
-                    'review_reason'              => null,
-                    'review_requested_by'        => null,
-                    'review_requested_fecha_fin' => null,
-                    'review_previous_state'      => null,
-
-                    'approved_by'                => $currentUserId,
-                    'approved_at'                => $now,
-                ];
-
-                $db->table('public.tareas')
-                    ->where('id_tarea', (int)$taskId)
-                    ->update($payload);
-
-                if ($requestedBy > 0) {
-                    $details = [
-                        'id_tarea'            => (int)$taskId,
-                        'titulo'              => (string)($task['titulo'] ?? ''),
-                        'decision'            => $decision,
-                        'action'              => $reviewAction,
-                        'requested_state'     => $task['review_requested_state'] ?? null,
-                        'previous_state'      => $task['review_previous_state'] ?? null,
-                        'requested_fecha_fin' => $task['review_requested_fecha_fin'] ?? null,
-                        'requested_reason'    => $task['review_reason'] ?? null,
-                        'result_estado'       => $payload['id_estado_tarea'] ?? null,
-                        'result_fecha_fin'    => null,
-                    ];
-
-                    $this->insertDecisionLog(
-                        (int)$taskId,
-                        $requestedBy,
-                        (int)$currentUserId,
-                        $decision,
-                        $reviewAction,
-                        $details
-                    );
-
-                    $this->updateLatestReviewLogDecision(
-                        (int)$taskId,
-                        $requestedBy,
-                        $decision,
-                        (int)$currentUserId,
-                        null
-                    );
-                }
-
-                continue;
-            }
-
-            // --------------------------------------------------
-            // B) Cambio de fecha solicitado
-            // SOLO aquí incrementa edit_count
-            // --------------------------------------------------
-            if ($reviewAction === 'date_change') {
-
-                $reqFin = trim((string) ($task['review_requested_fecha_fin'] ?? ''));
-
-                // Si no vino fecha solicitada => volver al estado previo
-                if ($reqFin === '') {
-                    $payload = [
-                        'id_estado_tarea'            => $prevState,
-
-                        'review_requested_state'     => null,
-                        'review_requested_at'        => null,
-                        'review_action'              => null,
-                        'review_reason'              => null,
-                        'review_requested_by'        => null,
-                        'review_requested_fecha_fin' => null,
-                        'review_previous_state'      => null,
-
-                        'approved_by'                => $currentUserId,
-                        'approved_at'                => $now,
-                        'completed_at'               => null,
-                    ];
-
-                    $db->table('public.tareas')
-                        ->where('id_tarea', (int)$taskId)
-                        ->update($payload);
-
-                    if ($requestedBy > 0) {
-                        $details = [
-                            'id_tarea'            => (int)$taskId,
-                            'titulo'              => (string)($task['titulo'] ?? ''),
-                            'decision'            => $decision,
-                            'action'              => $reviewAction,
-                            'requested_state'     => $task['review_requested_state'] ?? null,
-                            'previous_state'      => $task['review_previous_state'] ?? null,
-                            'requested_fecha_fin' => $task['review_requested_fecha_fin'] ?? null,
-                            'requested_reason'    => $task['review_reason'] ?? null,
-                            'result_estado'       => $payload['id_estado_tarea'] ?? null,
-                            'result_fecha_fin'    => null,
-                        ];
-
-                        $this->insertDecisionLog(
-                            (int)$taskId,
-                            $requestedBy,
-                            (int)$currentUserId,
-                            $decision,
-                            $reviewAction,
-                            $details
-                        );
-
-                        $this->updateLatestReviewLogDecision(
-                            (int)$taskId,
-                            $requestedBy,
-                            $decision,
-                            (int)$currentUserId,
-                            null
-                        );
-                    }
-
-                    continue;
-                }
-
-                $editCount = (int) ($task['edit_count'] ?? 0);
-
-                // Máximo 3 cambios aprobados
-                if ($editCount >= 3) {
-                    $payload = [
-                        'id_estado_tarea'            => $prevState,
-
-                        'review_requested_state'     => null,
-                        'review_requested_at'        => null,
-                        'review_action'              => null,
-                        'review_reason'              => null,
-                        'review_requested_by'        => null,
-                        'review_requested_fecha_fin' => null,
-                        'review_previous_state'      => null,
-
-                        'approved_by'                => $currentUserId,
-                        'approved_at'                => $now,
-                        'completed_at'               => null,
-                    ];
-
-                    $db->table('public.tareas')
-                        ->where('id_tarea', (int)$taskId)
-                        ->update($payload);
-
-                    if ($requestedBy > 0) {
-                        $details = [
-                            'id_tarea'            => (int)$taskId,
-                            'titulo'              => (string)($task['titulo'] ?? ''),
-                            'decision'            => 'rejected',
-                            'action'              => $reviewAction,
-                            'requested_state'     => $task['review_requested_state'] ?? null,
-                            'previous_state'      => $task['review_previous_state'] ?? null,
-                            'requested_fecha_fin' => $task['review_requested_fecha_fin'] ?? null,
-                            'requested_reason'    => $task['review_reason'] ?? null,
-                            'result_estado'       => $payload['id_estado_tarea'] ?? null,
-                            'result_fecha_fin'    => null,
-                        ];
-
-                        $this->insertDecisionLog(
-                            (int)$taskId,
-                            $requestedBy,
-                            (int)$currentUserId,
-                            'rejected',
-                            $reviewAction,
-                            $details
-                        );
-
-                        $this->updateLatestReviewLogDecision(
-                            (int)$taskId,
-                            $requestedBy,
-                            'rejected',
-                            (int)$currentUserId,
-                            'Máximo de 3 cambios de fecha alcanzado.'
-                        );
-                    }
-
-                    continue;
-                }
-
-                $endDt = $this->parseLocalDateTime($reqFin);
-
-                $newPriority = (int) ($task['id_prioridad'] ?? 1);
-                if ($endDt) {
-                    $newPriority = $this->autoPriorityFromEnd($endDt, (int)($task['id_prioridad'] ?? 0));
-                }
-
-                $payload = [
-                    'fecha_fin'                  => $endDt ? $this->toDbDateTime($endDt) : $reqFin,
-                    'id_prioridad'               => $newPriority,
-                    'id_estado_tarea'            => $prevState,
-
-                    'review_requested_state'     => null,
-                    'review_requested_at'        => null,
-                    'review_action'              => null,
-                    'review_reason'              => null,
-                    'review_requested_by'        => null,
-                    'review_requested_fecha_fin' => null,
-                    'review_previous_state'      => null,
-
-                    'approved_by'                => $currentUserId,
-                    'approved_at'                => $now,
-
-                    'completed_at'               => null,
-                ];
-
-                if ($this->taskColumnExists('edit_count')) {
-                    $payload['edit_count'] = $editCount + 1;
-                }
-
-                $db->table('public.tareas')
-                    ->where('id_tarea', (int)$taskId)
-                    ->update($payload);
-
-                if ($requestedBy > 0) {
-                    $details = [
-                        'id_tarea'            => (int)$taskId,
-                        'titulo'              => (string)($task['titulo'] ?? ''),
-                        'decision'            => $decision,
-                        'action'              => $reviewAction,
-                        'requested_state'     => $task['review_requested_state'] ?? null,
-                        'previous_state'      => $task['review_previous_state'] ?? null,
-                        'requested_fecha_fin' => $task['review_requested_fecha_fin'] ?? null,
-                        'requested_reason'    => $task['review_reason'] ?? null,
-                        'result_estado'       => $payload['id_estado_tarea'] ?? null,
-                        'result_fecha_fin'    => $payload['fecha_fin'] ?? null,
-                    ];
-
-                    $this->insertDecisionLog(
-                        (int)$taskId,
-                        $requestedBy,
-                        (int)$currentUserId,
-                        $decision,
-                        $reviewAction,
-                        $details
-                    );
-
-                    $this->updateLatestReviewLogDecision(
-                        (int)$taskId,
-                        $requestedBy,
-                        $decision,
-                        (int)$currentUserId,
-                        null
-                    );
-                }
-
-                continue;
-            }
-
-            // --------------------------------------------------
-            // C) Legacy / compatibilidad (realizada / no realizada)
-            // --------------------------------------------------
-            $editCount = (int) ($task['edit_count'] ?? 0);
-            $forcedNoRealizada = ($editCount > $this->maxEditsForRealizada);
-
-            $req = (int) ($task['review_requested_state'] ?? 0);
-
-            $finalEstado = in_array($req, [$this->estadoRealizada, $this->estadoNoRealizada], true)
-                ? $req
-                : $this->estadoNoRealizada;
-
-            if ($forcedNoRealizada) {
-                $finalEstado = $this->estadoNoRealizada;
-            }
-
-            $payload = [
-                'id_estado_tarea'            => $finalEstado,
-                'review_requested_state'     => null,
-                'review_requested_at'        => null,
-
-                'review_action'              => null,
-                'review_reason'              => null,
-                'review_requested_by'        => null,
-                'review_requested_fecha_fin' => null,
-                'review_previous_state'      => null,
-
-                'approved_by'                => $currentUserId,
-                'approved_at'                => $now,
-
-                'completed_at' => in_array($finalEstado, [$this->estadoRealizada, $this->estadoNoRealizada], true)
-                    ? $now
-                    : null,
+            return [
+                'success' => false,
+                'error'   => 'Error procesando revisión: ' . $e->getMessage(),
             ];
-
-            $db->table('public.tareas')
-                ->where('id_tarea', (int)$taskId)
-                ->update($payload);
-
-            if ($requestedBy > 0) {
-                $details = [
-                    'id_tarea'            => (int)$taskId,
-                    'titulo'              => (string)($task['titulo'] ?? ''),
-                    'decision'            => $decision,
-                    'action'              => ($reviewAction !== '' ? $reviewAction : 'state'),
-                    'requested_state'     => $task['review_requested_state'] ?? null,
-                    'previous_state'      => $task['review_previous_state'] ?? null,
-                    'requested_fecha_fin' => $task['review_requested_fecha_fin'] ?? null,
-                    'requested_reason'    => $task['review_reason'] ?? null,
-                    'result_estado'       => $payload['id_estado_tarea'] ?? null,
-                    'result_fecha_fin'    => null,
-                ];
-
-                $this->insertDecisionLog(
-                    (int)$taskId,
-                    $requestedBy,
-                    (int)$currentUserId,
-                    $decision,
-                    ($reviewAction !== '' ? $reviewAction : 'state'),
-                    $details
-                );
-
-                $this->updateLatestReviewLogDecision(
-                    (int)$taskId,
-                    $requestedBy,
-                    $decision,
-                    (int)$currentUserId,
-                    null
-                );
-            }
         }
-    } catch (\Throwable $e) {
-        $db->transRollback();
+
+        $db->transComplete();
+
+        if ($db->transStatus() === false) {
+            return ['success' => false, 'error' => 'No se pudo completar la transacción.'];
+        }
+
+        if ($processed <= 0) {
+            return [
+                'success' => false,
+                'error'   => 'No se procesó ninguna tarea. Verifica que estén en revisión y que seas el supervisor directo.',
+            ];
+        }
+
+        // ==================================================
+        // RESPUESTA FINAL
+        // ==================================================
+        if ($action === 'cancel_request') {
+            return [
+                'success'           => true,
+                'message'           => 'La solicitud fue cancelada y la tarea volvió a su estado anterior.',
+                'needs_time_update' => !empty($expiredTasks),
+                'expired_tasks'     => $expiredTasks,
+            ];
+        }
+
+        if ($action === 'force_not_done') {
+            return [
+                'success'           => true,
+                'message'           => 'La tarea fue marcada como no realizada.',
+                'needs_time_update' => false,
+                'expired_tasks'     => [],
+            ];
+        }
 
         return [
-            'success' => false,
-            'error'   => 'Error procesando revisión: ' . $e->getMessage(),
+            'success'           => true,
+            'message'           => 'Las tareas fueron aprobadas correctamente.',
+            'needs_time_update' => false,
+            'expired_tasks'     => [],
         ];
     }
-
-    $db->transComplete();
-
-    if ($db->transStatus() === false) {
-        return ['success' => false, 'error' => 'No se pudo completar la transacción.'];
-    }
-
-    return [
-        'success' => true,
-        'message' => ($action === 'reject')
-            ? 'Las tareas rechazadas fueron procesadas correctamente.'
-            : 'Las tareas fueron aprobadas correctamente.',
-    ];
-}
     /**
      * buildHistorySeries()
      *
@@ -5141,5 +5427,490 @@ SQL;
         } catch (\Throwable $e) {
             log_message('error', 'updateLatestReviewLogDecision error: ' . $e->getMessage());
         }
+    }
+    /**
+     * ==================================================
+     * supervisorReviewAction()
+     * ==================================================
+     * Acciones nuevas para supervisor:
+     *
+     * - cancel_request
+     *   => cancela la solicitud y devuelve la tarea al estado anterior
+     *
+     * - approve_done
+     *   => aprueba y marca la tarea como REALIZADA
+     *
+     * - force_not_done
+     *   => fuerza la tarea como NO REALIZADA
+     *
+     * REGLAS:
+     * - Solo puede actuar el supervisor directo del asignado
+     *   o un usuario super/gerencia.
+     * - Solo procesa tareas que estén en estado EN REVISIÓN.
+     * - Limpia review_* al finalizar la decisión.
+     * - Registra notificación en tarea_review_decision_log.
+     */
+    public function supervisorReviewAction(
+        array $taskIds,
+        string $action,
+        int $currentUserId,
+        int $currentUserAreaId
+    ): array {
+        // ==================================================
+        // 0) Validaciones de columnas
+        // ==================================================
+        if (!$this->hasReviewFlowColumns()) {
+            return $this->reviewColumnsMissingError();
+        }
+
+        if (method_exists($this, 'hasExtendedReviewColumns') && !$this->hasExtendedReviewColumns()) {
+            return [
+                'success' => false,
+                'error'   => 'Faltan columnas extendidas de revisión (review_action, review_reason, review_requested_by, review_requested_fecha_fin, review_previous_state). Ejecuta el ALTER TABLE.',
+            ];
+        }
+
+        // ==================================================
+        // 1) Validar acción
+        // ==================================================
+        if (!in_array($action, ['cancel_request', 'approve_done', 'force_not_done'], true)) {
+            return [
+                'success' => false,
+                'error'   => 'Acción inválida para supervisor.',
+            ];
+        }
+
+        // ==================================================
+        // 2) Normalizar IDs
+        // ==================================================
+        $clean = [];
+        foreach ($taskIds as $id) {
+            $n = (int) $id;
+            if ($n > 0) {
+                $clean[] = $n;
+            }
+        }
+
+        $clean = array_values(array_unique($clean));
+
+        if (empty($clean)) {
+            return [
+                'success' => false,
+                'error'   => 'No seleccionaste tareas.',
+            ];
+        }
+
+        // ==================================================
+        // 3) Scope del actor actual
+        // ==================================================
+        $scope = $this->resolveAssignScope($currentUserId, $currentUserAreaId);
+        $isSuperUser = (($scope['mode'] ?? '') === 'super');
+
+        $db  = Database::connect();
+        $now = (new \DateTimeImmutable('now', $this->tz()))->format('Y-m-d H:i:s');
+
+        $processed = 0;
+
+        // ==================================================
+        // 4) Transacción
+        // ==================================================
+        $db->transStart();
+
+        try {
+            foreach ($clean as $taskId) {
+
+                // ----------------------------------------------
+                // 4.1) Buscar tarea
+                // ----------------------------------------------
+                $task = $this->tareaModel->find((int) $taskId);
+                if (!$task) {
+                    continue;
+                }
+
+                // Solo tareas en revisión
+                if ((int)($task['id_estado_tarea'] ?? 0) !== $this->estadoEnRevision) {
+                    continue;
+                }
+
+                // ----------------------------------------------
+                // 4.2) Validar supervisor directo o super
+                // ----------------------------------------------
+                $asignadoA = (int) ($task['asignado_a'] ?? 0);
+
+                $rowSup = $db->query(
+                    'SELECT id_supervisor
+                     FROM public."USER"
+                     WHERE id_user = ?
+                     LIMIT 1',
+                    [$asignadoA]
+                )->getRowArray();
+
+                $assignedSupervisorId = (int) ($rowSup['id_supervisor'] ?? 0);
+
+                $isDirectSupervisor = ($assignedSupervisorId > 0 && $assignedSupervisorId === $currentUserId);
+
+                if (!$isDirectSupervisor && !$isSuperUser) {
+                    continue;
+                }
+
+                // ----------------------------------------------
+                // 4.3) Datos base de revisión
+                // ----------------------------------------------
+                $reviewAction = trim((string) ($task['review_action'] ?? ''));
+                $prevState    = (int) ($task['review_previous_state'] ?? 0);
+                $requestedBy  = (int) ($task['review_requested_by'] ?? 0);
+
+                if ($prevState <= 0) {
+                    $prevState = $this->estadoEnProceso;
+                }
+
+                $payload = [];
+
+                // ----------------------------------------------
+                // 4.4) Acción: cancelar solicitud
+                // => volver al estado anterior
+                // ----------------------------------------------
+                if ($action === 'cancel_request') {
+                    $payload = [
+                        'id_estado_tarea'            => $prevState,
+                        'completed_at'               => null,
+
+                        // limpieza revisión
+                        'review_requested_state'     => null,
+                        'review_requested_at'        => null,
+                        'review_action'              => null,
+                        'review_reason'              => null,
+                        'review_requested_by'        => null,
+                        'review_requested_fecha_fin' => null,
+                        'review_previous_state'      => null,
+
+                        // auditoría
+                        'approved_by'                => $currentUserId,
+                        'approved_at'                => $now,
+                    ];
+
+                    $decisionForLog = 'rejected';
+                    $actionForLog   = ($reviewAction !== '' ? $reviewAction : 'state');
+                }
+
+                // ----------------------------------------------
+                // 4.5) Acción: aprobar como realizada
+                // ----------------------------------------------
+                if ($action === 'approve_done') {
+                    $payload = [
+                        'id_estado_tarea'            => $this->estadoRealizada,
+                        'completed_at'               => $now,
+
+                        // limpieza revisión
+                        'review_requested_state'     => null,
+                        'review_requested_at'        => null,
+                        'review_action'              => null,
+                        'review_reason'              => null,
+                        'review_requested_by'        => null,
+                        'review_requested_fecha_fin' => null,
+                        'review_previous_state'      => null,
+
+                        // auditoría
+                        'approved_by'                => $currentUserId,
+                        'approved_at'                => $now,
+                    ];
+
+                    $decisionForLog = 'approved';
+                    $actionForLog   = 'approve_done';
+                }
+
+                // ----------------------------------------------
+                // 4.6) Acción: forzar como no realizada
+                // ----------------------------------------------
+                if ($action === 'force_not_done') {
+                    $payload = [
+                        'id_estado_tarea'            => $this->estadoNoRealizada,
+                        'completed_at'               => $now,
+
+                        // limpieza revisión
+                        'review_requested_state'     => null,
+                        'review_requested_at'        => null,
+                        'review_action'              => null,
+                        'review_reason'              => null,
+                        'review_requested_by'        => null,
+                        'review_requested_fecha_fin' => null,
+                        'review_previous_state'      => null,
+
+                        // auditoría
+                        'approved_by'                => $currentUserId,
+                        'approved_at'                => $now,
+                    ];
+
+                    $decisionForLog = 'approved';
+                    $actionForLog   = 'force_not_done';
+                }
+
+                // ----------------------------------------------
+                // 4.7) Guardar update
+                // ----------------------------------------------
+                $db->table('public.tareas')
+                    ->where('id_tarea', (int) $taskId)
+                    ->update($payload);
+
+                // ----------------------------------------------
+                // 4.8) Registrar log / notificación
+                // ----------------------------------------------
+                if ($requestedBy > 0) {
+                    $details = [
+                        'id_tarea'            => (int) $taskId,
+                        'titulo'              => (string) ($task['titulo'] ?? ''),
+                        'decision'            => $decisionForLog,
+                        'action'              => $actionForLog,
+                        'requested_state'     => $task['review_requested_state'] ?? null,
+                        'previous_state'      => $task['review_previous_state'] ?? null,
+                        'requested_fecha_fin' => $task['review_requested_fecha_fin'] ?? null,
+                        'requested_reason'    => $task['review_reason'] ?? null,
+                        'result_estado'       => $payload['id_estado_tarea'] ?? null,
+                        'result_fecha_fin'    => $payload['fecha_fin'] ?? null,
+                    ];
+
+                    $this->insertDecisionLog(
+                        (int) $taskId,
+                        $requestedBy,
+                        (int) $currentUserId,
+                        $decisionForLog,
+                        $actionForLog,
+                        $details
+                    );
+
+                    $this->updateLatestReviewLogDecision(
+                        (int) $taskId,
+                        $requestedBy,
+                        $decisionForLog,
+                        (int) $currentUserId,
+                        null
+                    );
+                }
+
+                $processed++;
+            }
+        } catch (\Throwable $e) {
+            $db->transRollback();
+
+            return [
+                'success' => false,
+                'error'   => 'Error procesando acción del supervisor: ' . $e->getMessage(),
+            ];
+        }
+
+        $db->transComplete();
+
+        if ($db->transStatus() === false) {
+            return [
+                'success' => false,
+                'error'   => 'No se pudo completar la transacción.',
+            ];
+        }
+
+        if ($processed <= 0) {
+            return [
+                'success' => false,
+                'error'   => 'No se procesó ninguna tarea. Verifica que estén en revisión y que seas el supervisor directo.',
+            ];
+        }
+
+        // ==================================================
+        // 5) Mensajes finales
+        // ==================================================
+        if ($action === 'cancel_request') {
+            return [
+                'success' => true,
+                'message' => 'La solicitud fue cancelada y la tarea volvió a su estado anterior.',
+            ];
+        }
+
+        if ($action === 'approve_done') {
+            return [
+                'success' => true,
+                'message' => 'La tarea fue aprobada y marcada como realizada.',
+            ];
+        }
+
+        return [
+            'success' => true,
+            'message' => 'La tarea fue marcada como no realizada.',
+        ];
+    }
+    public function updateOnlyEndTime(
+        int $taskId,
+        string $newTime,
+        int $currentUserId,
+        int $currentUserAreaId
+    ): array {
+        // ==================================================
+        // 1) Buscar tarea
+        // ==================================================
+        $task = $this->tareaModel->find($taskId);
+
+        if (!$task) {
+            return [
+                'success' => false,
+                'error'   => 'Tarea no encontrada.',
+            ];
+        }
+
+        // ==================================================
+        // 2) No permitir sobre tareas cerradas
+        // ==================================================
+        $estadoActual = (int) ($task['id_estado_tarea'] ?? 0);
+
+        if ($this->isClosedEstado($estadoActual)) {
+            return [
+                'success' => false,
+                'error'   => 'La tarea ya está cerrada y no se puede actualizar la hora.',
+            ];
+        }
+
+        // ==================================================
+        // 3) Resolver alcance del actor actual
+        // ==================================================
+        $scope = $this->resolveAssignScope($currentUserId, $currentUserAreaId);
+
+        $asignadoA = (int) ($task['asignado_a'] ?? 0);
+
+        $db = Database::connect();
+
+        $rowSup = $db->query(
+            'SELECT id_supervisor
+         FROM public."USER"
+         WHERE id_user = ?
+         LIMIT 1',
+            [$asignadoA]
+        )->getRowArray();
+
+        $assignedSupervisorId = (int) ($rowSup['id_supervisor'] ?? 0);
+
+        $isDirectSupervisor = ($assignedSupervisorId > 0 && $assignedSupervisorId === $currentUserId);
+        $isSuperUser        = (($scope['mode'] ?? '') === 'super');
+
+        if (!$isDirectSupervisor && !$isSuperUser) {
+            return [
+                'success' => false,
+                'error'   => 'No autorizado para actualizar la hora de esta tarea.',
+            ];
+        }
+
+        // ==================================================
+        // 4) Validar fecha_fin original
+        // ==================================================
+        $originalFechaFin = trim((string) ($task['fecha_fin'] ?? ''));
+        if ($originalFechaFin === '') {
+            return [
+                'success' => false,
+                'error'   => 'La tarea no tiene fecha fin.',
+            ];
+        }
+
+        // ==================================================
+        // 5) Validar formato de hora recibido
+        // Esperado: HH:MM
+        // ==================================================
+        $newTime = trim($newTime);
+
+        if (!preg_match('/^\d{2}:\d{2}$/', $newTime)) {
+            return [
+                'success' => false,
+                'error'   => 'La hora enviada no es válida. Usa el formato HH:MM.',
+            ];
+        }
+
+        // ==================================================
+        // 6) Reemplazar SOLO la hora en la fecha fin original
+        // ==================================================
+        $newEndDt = $this->replaceOnlyTimeOnDate($originalFechaFin, $newTime);
+
+        if (!$newEndDt) {
+            return [
+                'success' => false,
+                'error'   => 'No se pudo construir la nueva fecha fin.',
+            ];
+        }
+
+        // ==================================================
+        // 7) Leer fecha inicio actual
+        // ==================================================
+        $startDt = $this->parseLocalDateTime((string) ($task['fecha_inicio'] ?? ''));
+
+        if (!$startDt) {
+            return [
+                'success' => false,
+                'error'   => 'No se pudo leer la fecha inicio actual.',
+            ];
+        }
+
+        // ==================================================
+        // 8) Validar que la nueva hora no deje fin < inicio
+        // ==================================================
+        if ($newEndDt < $startDt) {
+            return [
+                'success' => false,
+                'error'   => 'La nueva hora no puede dejar la fecha fin antes de la fecha inicio.',
+            ];
+        }
+
+        // ==================================================
+        // 9) Validar que quede vigente respecto a "ahora"
+        // ==================================================
+        $nowDt = new \DateTimeImmutable('now', $this->tz());
+
+        if ($newEndDt <= $nowDt) {
+            return [
+                'success' => false,
+                'error'   => 'La nueva hora debe ser posterior a la hora actual para que la tarea vuelva a estar vigente.',
+            ];
+        }
+
+        // ==================================================
+        // 10) Recalcular prioridad automática
+        // ==================================================
+        $newPriority = $this->autoPriorityFromEnd(
+            $newEndDt,
+            (int) ($task['id_prioridad'] ?? 0)
+        );
+
+        // ==================================================
+        // 11) Auditoría
+        // ==================================================
+        $now = $nowDt->format('Y-m-d H:i:s');
+
+        // ==================================================
+        // 12) Payload
+        // - solo cambia fecha_fin
+        // - no toca fecha_inicio
+        // - deja completed_at en null por seguridad
+        // - limpia approved_* solo actualizando con esta acción
+        // ==================================================
+        $payload = [
+            'fecha_fin'    => $this->toDbDateTime($newEndDt),
+            'id_prioridad' => $newPriority,
+            'completed_at' => null,
+            'approved_by'  => $currentUserId,
+            'approved_at'  => $now,
+        ];
+
+        // ==================================================
+        // 13) Guardar
+        // ==================================================
+        try {
+            $db->table('public.tareas')
+                ->where('id_tarea', $taskId)
+                ->update($payload);
+        } catch (\Throwable $e) {
+            return [
+                'success' => false,
+                'error'   => 'No se pudo actualizar la hora límite.',
+            ];
+        }
+
+        return [
+            'success'       => true,
+            'message'       => 'La hora límite fue actualizada correctamente.',
+            'new_fecha_fin' => $payload['fecha_fin'],
+        ];
     }
 }

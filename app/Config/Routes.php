@@ -146,6 +146,18 @@ $routes->group('', ['filter' => 'auth'], function (RouteCollection $routes) {
         $routes->post('revisar-lote', 'Tareas::revisarLote', ['filter' => 'permission:tareas.gestionar']);
 
         // --------------------------------------------------
+        // REVISIÓN SUPERVISOR
+        // --------------------------------------------------
+        $routes->post('revision/cancel-request', 'Tareas::cancelReviewRequest', ['filter' => 'permission:tareas.gestionar']);
+        $routes->post('revision/approve-done', 'Tareas::approveReviewAsDone', ['filter' => 'permission:tareas.gestionar']);
+        $routes->post('revision/force-not-done', 'Tareas::forceReviewAsNotDone', ['filter' => 'permission:tareas.gestionar']);
+
+        // --------------------------------------------------
+        // ACTUALIZAR SOLO HORA DE FECHA FIN
+        // --------------------------------------------------
+        $routes->post('review-update-time/(:num)', 'Tareas::reviewUpdateTime/$1', ['filter' => 'permission:tareas.gestionar']);
+
+        // --------------------------------------------------
         // NOTIFICACIONES DE DECISIÓN
         // --------------------------------------------------
         $routes->post('decision-seen', 'Tareas::markDecisionSeen', ['filter' => 'permission:tareas.gestionar']);

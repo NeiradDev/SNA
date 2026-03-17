@@ -311,14 +311,18 @@ class Tareas extends BaseController
     public function events()
     {
         if (!session()->get('logged_in')) {
-            return $this->response->setStatusCode(401);
+            return $this->response->setStatusCode(401)->setJSON([
+                'success' => false,
+                'error'   => 'No autorizado',
+            ]);
         }
 
         $scope  = (string) ($this->request->getGet('scope') ?? 'mine');
         $idUser = (int) session()->get('id_user');
+        $idArea = (int) session()->get('id_area');
 
         return $this->response->setJSON(
-            $this->service->getCalendarEvents($idUser, $scope)
+            $this->service->getCalendarEvents($idUser, $scope, $idArea)
         );
     }
 
@@ -559,22 +563,44 @@ class Tareas extends BaseController
 
     public function revisarLote()
     {
+        // ==================================================
+        // 1) Validar sesión
+        // ==================================================
         if (!session()->get('logged_in')) {
             return $this->response->setStatusCode(401)->setJSON([
-                'success'  => false,
-                'error'    => 'No autorizado',
-                'csrfHash' => csrf_hash(),
+                'success'           => false,
+                'error'             => 'No autorizado',
+                'message'           => '',
+                'needs_time_update' => false,
+                'expired_tasks'     => [],
+                'csrfHash'          => csrf_hash(),
             ]);
         }
 
+        // ==================================================
+        // 2) Leer IDs enviados desde el frontend
+        //    Puede venir como:
+        //    - task_ids[]
+        //    - ids[]
+        // ==================================================
         $ids = (array) (
             $this->request->getPost('task_ids')
             ?? $this->request->getPost('ids')
             ?? []
         );
 
+        // ==================================================
+        // 3) Leer acción solicitada
+        //    Valores esperados:
+        //    - approve
+        //    - cancel_request
+        //    - force_not_done
+        // ==================================================
         $action = (string) ($this->request->getPost('action') ?? '');
 
+        // ==================================================
+        // 4) Ejecutar service
+        // ==================================================
         $result = $this->service->reviewBatch(
             $ids,
             $action,
@@ -582,14 +608,26 @@ class Tareas extends BaseController
             (int) session()->get('id_area')
         );
 
+        // ==================================================
+        // 5) Responder JSON
+        //    IMPORTANTE:
+        //    aquí devolvemos también:
+        //    - needs_time_update
+        //    - expired_tasks
+        //
+        //    Esto permite que el frontend NO recargue de una vez
+        //    si la tarea quedó vencida al volver al estado anterior,
+        //    y abra el modal para actualizar solo la hora.
+        // ==================================================
         return $this->response->setJSON([
-            'success'  => (bool) ($result['success'] ?? false),
-            'error'    => (string) ($result['error'] ?? ''),
-            'message'  => (string) ($result['message'] ?? ''),
-            'csrfHash' => csrf_hash(),
+            'success'           => (bool) ($result['success'] ?? false),
+            'error'             => (string) ($result['error'] ?? ''),
+            'message'           => (string) ($result['message'] ?? ''),
+            'needs_time_update' => (bool) ($result['needs_time_update'] ?? false),
+            'expired_tasks'     => (array) ($result['expired_tasks'] ?? []),
+            'csrfHash'          => csrf_hash(),
         ]);
     }
-
     /**
      * ==================================================
      * ✅ NUEVO: Marcar notificaciones como leídas
@@ -616,6 +654,150 @@ class Tareas extends BaseController
             'success'  => true,
             'count'    => $count,
             'csrfHash' => csrf_hash(),
+        ]);
+    }
+    // ==================================================
+    // SUPERVISOR: CANCELAR SOLICITUD
+    // - Devuelve la tarea al estado anterior
+    // - Limpia la revisión pendiente
+    // ==================================================
+    public function cancelReviewRequest()
+    {
+        if (!session()->get('logged_in')) {
+            return $this->response->setStatusCode(401)->setJSON([
+                'success'  => false,
+                'error'    => 'No autorizado',
+                'csrfHash' => csrf_hash(),
+            ]);
+        }
+
+        $ids = (array) (
+            $this->request->getPost('task_ids')
+            ?? $this->request->getPost('ids')
+            ?? []
+        );
+
+        $result = $this->service->supervisorReviewAction(
+            $ids,
+            'cancel_request',
+            (int) session()->get('id_user'),
+            (int) session()->get('id_area')
+        );
+
+        return $this->response->setJSON([
+            'success'  => (bool) ($result['success'] ?? false),
+            'error'    => (string) ($result['error'] ?? ''),
+            'message'  => (string) ($result['message'] ?? ''),
+            'csrfHash' => csrf_hash(),
+        ]);
+    }
+
+    // ==================================================
+    // SUPERVISOR: APROBAR COMO REALIZADA
+    // - Marca la tarea o tareas como Realizada
+    // ==================================================
+    public function approveReviewAsDone()
+    {
+        if (!session()->get('logged_in')) {
+            return $this->response->setStatusCode(401)->setJSON([
+                'success'  => false,
+                'error'    => 'No autorizado',
+                'csrfHash' => csrf_hash(),
+            ]);
+        }
+
+        $ids = (array) (
+            $this->request->getPost('task_ids')
+            ?? $this->request->getPost('ids')
+            ?? []
+        );
+
+        $result = $this->service->supervisorReviewAction(
+            $ids,
+            'approve_done',
+            (int) session()->get('id_user'),
+            (int) session()->get('id_area')
+        );
+
+        return $this->response->setJSON([
+            'success'  => (bool) ($result['success'] ?? false),
+            'error'    => (string) ($result['error'] ?? ''),
+            'message'  => (string) ($result['message'] ?? ''),
+            'csrfHash' => csrf_hash(),
+        ]);
+    }
+
+    // ==================================================
+    // SUPERVISOR: FORZAR COMO NO REALIZADA
+    // - Marca sí o sí la tarea o tareas como No realizada
+    // ==================================================
+    public function forceReviewAsNotDone()
+    {
+        if (!session()->get('logged_in')) {
+            return $this->response->setStatusCode(401)->setJSON([
+                'success'  => false,
+                'error'    => 'No autorizado',
+                'csrfHash' => csrf_hash(),
+            ]);
+        }
+
+        $ids = (array) (
+            $this->request->getPost('task_ids')
+            ?? $this->request->getPost('ids')
+            ?? []
+        );
+
+        $result = $this->service->supervisorReviewAction(
+            $ids,
+            'force_not_done',
+            (int) session()->get('id_user'),
+            (int) session()->get('id_area')
+        );
+
+        return $this->response->setJSON([
+            'success'  => (bool) ($result['success'] ?? false),
+            'error'    => (string) ($result['error'] ?? ''),
+            'message'  => (string) ($result['message'] ?? ''),
+            'csrfHash' => csrf_hash(),
+        ]);
+    }
+    public function reviewUpdateTime(int $idTarea)
+    {
+        // ==================================================
+        // 1) Validar sesión
+        // ==================================================
+        if (!session()->get('logged_in')) {
+            return $this->response->setStatusCode(401)->setJSON([
+                'success'  => false,
+                'error'    => 'No autorizado',
+                'csrfHash' => csrf_hash(),
+            ]);
+        }
+
+        // ==================================================
+        // 2) Leer nueva hora desde POST
+        // ==================================================
+        $newTime = trim((string) ($this->request->getPost('new_time') ?? ''));
+
+        // ==================================================
+        // 3) Ejecutar service
+        // ==================================================
+        $result = $this->service->updateOnlyEndTime(
+            $idTarea,
+            $newTime,
+            (int) session()->get('id_user'),
+            (int) session()->get('id_area')
+        );
+
+        // ==================================================
+        // 4) Respuesta JSON
+        // ==================================================
+        return $this->response->setJSON([
+            'success'       => (bool) ($result['success'] ?? false),
+            'error'         => (string) ($result['error'] ?? ''),
+            'message'       => (string) ($result['message'] ?? ''),
+            'new_fecha_fin' => $result['new_fecha_fin'] ?? null,
+            'csrfHash'      => csrf_hash(),
         ]);
     }
 }

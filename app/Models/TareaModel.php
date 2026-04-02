@@ -84,7 +84,8 @@ class TareaModel extends Model
         'review_requested_at',
         'approved_by',
         'approved_at',
-        'recurrence_uid'
+        'recurrence_uid',
+        'review_cancel_scope'
     ];
 
     /**

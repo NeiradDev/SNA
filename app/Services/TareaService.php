@@ -149,7 +149,7 @@ class TareaService
      * Validación de fechas:
      * - inicio obligatorio
      * - fin obligatorio si $requireEnd=true
-     * - NO permitir días anteriores a HOY (comparación YYYY-mm-dd)
+     * - ✅ YA NO bloquea días anteriores a hoy
      * - fin >= inicio (comparación con hora incluida)
      */
     private function validateDates(
@@ -170,37 +170,14 @@ class TareaService
             return ['ok' => false, 'error' => 'La fecha final es obligatoria.', 'startDt' => $startDt, 'endDt' => null];
         }
 
-        $today = $this->todayKey();
-
-        // ✅ Bloqueo de fechas en el pasado (por día)
-        if (!$skipPastDayCheckStart && $this->dayKey($startDt) < $today) {
+        // ✅ Solo validar relación inicio/fin
+        if ($endDt && $endDt < $startDt) {
             return [
                 'ok' => false,
-                'error' => 'La fecha de inicio no puede ser anterior a la fecha actual.',
+                'error' => 'La fecha final no puede ser menor a la fecha de inicio.',
                 'startDt' => $startDt,
                 'endDt' => $endDt,
             ];
-        }
-
-        if ($endDt) {
-            if (!$skipPastDayCheckEnd && $this->dayKey($endDt) < $today) {
-                return [
-                    'ok' => false,
-                    'error' => 'La fecha final no puede ser anterior a la fecha actual.',
-                    'startDt' => $startDt,
-                    'endDt' => $endDt,
-                ];
-            }
-
-            // ✅ Comparación con hora incluida
-            if ($endDt < $startDt) {
-                return [
-                    'ok' => false,
-                    'error' => 'La fecha final no puede ser menor a la fecha de inicio.',
-                    'startDt' => $startDt,
-                    'endDt' => $endDt,
-                ];
-            }
         }
 
         return ['ok' => true, 'error' => null, 'startDt' => $startDt, 'endDt' => $endDt];
@@ -349,7 +326,8 @@ class TareaService
             $this->taskColumnExists('review_reason') &&
             $this->taskColumnExists('review_requested_by') &&
             $this->taskColumnExists('review_requested_fecha_fin') &&
-            $this->taskColumnExists('review_previous_state');
+            $this->taskColumnExists('review_previous_state') &&
+            $this->taskColumnExists('review_cancel_scope');
     }
     /**
      * Error estándar cuando faltan columnas de revisión.
@@ -1146,12 +1124,7 @@ class TareaService
                 $occStart = new \DateTimeImmutable($day->format('Y-m-d') . ' ' . $startTime, $this->tz());
                 $occEnd   = $occStart->modify('+' . $durationSeconds . ' seconds');
 
-                // No crear ocurrencias en días pasados
-                $todayKey = $this->todayKey();
-                if ($this->dayKey($occStart) < $todayKey) {
-                    continue;
-                }
-
+                // ✅ Permitido crear ocurrencias en días pasados
                 $prio = $this->autoPriorityFromEnd($occEnd);
 
                 // batch_uid por ocurrencia (sirve para edición por lote)
@@ -1403,161 +1376,239 @@ class TareaService
          * =========================================================
          * TareaService::updateTask()
          * =========================================================
-         * OBJETIVO (según tu requerimiento):
-         * ✅ fecha_inicio: SIEMPRE fija (no editable)
+         * REGLAS IMPLEMENTADAS:
+         * ---------------------------------------------------------
+         * ✅ fecha_inicio:
+         *    - SIEMPRE fija
+         *    - nunca se cambia desde edición
+         *
          * ✅ fecha_fin:
-         *    - Usuario NO puede cambiar directo
-         *    - Solo cambia directo si:
-         *        a) Gerencia/super
-         *        b) Supervisor DIRECTO de TODOS los asignados del batch (cadena jefe inmediato)
-         *    - Si no puede cambiar directo y viene fecha_fin manipulada:
-         *        -> NO se aplica, pero TAMPOCO se rompe el guardado normal.
+         *    - se puede cambiar directo solo si:
+         *         a) Gerencia / super
+         *         b) Jefe de división en su alcance
+         *         c) Jefe de área en su alcance
+         *         d) Supervisor directo de TODOS los asignados
+         *
+         * ✅ Si viene fecha_fin y NO tiene permiso:
+         *    - devuelve error real
          *
          * ✅ edit_count:
-         *    - NO se incrementa aquí (porque el conteo es "solo si se aprueba")
-         *    - Se incrementa en reviewBatch() cuando action=approve y review_action=date_change
-         *    - (opcional) también en requestReviewChange() cuando supervisor aplica directo
+         *    - si el cambio de fecha es DIRECTO por supervisor/jefe/gerencia:
+         *         -> incrementa aquí mismo
+         *    - si el cambio va por revisión:
+         *         -> incrementa cuando se aprueba
+         *
+         * ✅ Límite:
+         *    - máximo 3 cambios aprobados/directos
+         *
+         * ✅ Si llega al límite:
+         *    - pasa a No realizada en cadena
+         *
+         * ✅ Repetidas:
+         *    - jefe área / jefe división / super => aplica en cadena por recurrence_uid
+         *    - excepto si está asignada al mismo jefe o autoasignada para él
          * =========================================================
          */
 
         $db = Database::connect();
 
         // ==================================================
-        // 1) Cargar fila base
+        // 1) Cargar tarea base
         // ==================================================
         $task = $this->tareaModel->find($idTarea);
         if (!$task) {
-            return ['success' => false, 'error' => 'Tarea no encontrada.'];
+            return [
+                'success' => false,
+                'error'   => 'Tarea no encontrada.',
+            ];
         }
 
         // ==================================================
-        // 2) Scope real (super/division/area/self)
+        // 2) Resolver scope real del usuario actual
         // ==================================================
         $scope = $this->resolveAssignScope($currentUserId, $currentUserAreaId);
 
+        $scopeMode           = (string)($scope['mode'] ?? 'self');
+        $isSuper             = ($currentUserAreaId === 1);
+        $isAreaBossScope     = ($scopeMode === 'area');
+        $isDivisionBossScope = ($scopeMode === 'division');
+        $isBossScope         = ($isSuper || $isAreaBossScope || $isDivisionBossScope);
+
         // ==================================================
-        // 3) Autorización base (incluye jefes por alcance)
+        // 3) Autorización base
         // ==================================================
         $isAssignee = ((int)($task['asignado_a'] ?? 0) === $currentUserId);
         $isCreator  = ((int)($task['asignado_por'] ?? 0) === $currentUserId);
-        $isSuper    = ($currentUserAreaId === 1);
 
-        // Jefaturas dentro de alcance (si tu canEditTask() lo permite)
         $isBossAllowed = $this->canEditTask($task, $currentUserId, $scope);
 
         if (!$isAssignee && !$isCreator && !$isSuper && !$isBossAllowed) {
-            return ['success' => false, 'error' => 'No autorizado.'];
+            return [
+                'success' => false,
+                'error'   => 'No autorizado.',
+            ];
         }
 
         // ==================================================
-        // 4) Regla final por alcance/estado (si canEditTask ya bloquea estados cerrados, etc.)
+        // 4) Validación final de edición
         // ==================================================
         if (!$this->canEditTask($task, $currentUserId, $scope)) {
-            return ['success' => false, 'error' => 'No tienes permisos para editar esta tarea.'];
+            return [
+                'success' => false,
+                'error'   => 'No tienes permisos para editar esta tarea.',
+            ];
         }
 
         // ==================================================
-        // 5) Grupo batch
+        // 5) Determinar filas a afectar
         // ==================================================
         $groupRows = $this->getBatchRowsForTask($task);
 
+        $recurrenceUid = trim((string)($task['recurrence_uid'] ?? ''));
+
+        $isAssignedToCurrentUser = ((int)($task['asignado_a'] ?? 0) === $currentUserId);
+        $isSelfAssigned          = (
+            (int)($task['asignado_a'] ?? 0) === $currentUserId
+            && (int)($task['asignado_por'] ?? 0) === $currentUserId
+        );
+
+        $mustOnlyAffectThisRow = ($isAssignedToCurrentUser || $isSelfAssigned);
+
+        // ✅ por defecto batch normal
+        $rowsToAffect = $groupRows;
+
+        // ✅ si es jefe/super y NO es tarea propia, usar recurrencia completa si existe
+        if ($isBossScope && !$mustOnlyAffectThisRow && $recurrenceUid !== '') {
+            $rowsToAffect = $db->query(
+                'SELECT *
+               FROM public.tareas
+              WHERE recurrence_uid = ?
+           ORDER BY id_tarea ASC',
+                [$recurrenceUid]
+            )->getResultArray();
+        }
+
+        if (empty($rowsToAffect)) {
+            $rowsToAffect = [$task];
+        }
+
         // batch_uid consistente si existe
-        $batchUid = $this->ensureBatchUidForGroup($groupRows);
+        $batchUid = $this->ensureBatchUidForGroup($rowsToAffect);
 
         // ==================================================
-        // 6) Asignados actuales (del grupo)
+        // 6) Asignados actuales del grupo afectado
         // ==================================================
         $existingAssignees = [];
-        foreach ($groupRows as $r) {
+        foreach ($rowsToAffect as $r) {
             $existingAssignees[] = (int)($r['asignado_a'] ?? 0);
         }
         $existingAssignees = array_values(array_unique(array_filter($existingAssignees)));
 
         // ==================================================
-        // 7) Asignados entrantes (normalizados)
+        // 7) Asignados entrantes
         // ==================================================
         $incomingAssignees = $this->normalizeAssignees($data['asignado_a'] ?? []);
 
-        // ✅ Quien puede gestionar asignados/campos globales
-        $isBoss = in_array((string)($scope['mode'] ?? 'self'), ['division', 'area'], true);
-        $canManageAssignees = ($isCreator || $isSuper || $isBoss);
+        // ==================================================
+        // 8) ¿Puede gestionar asignados?
+        // ==================================================
+        $canManageAssignees = ($isCreator || $isSuper || $isAreaBossScope || $isDivisionBossScope);
 
         if (!$canManageAssignees) {
-            // Seguridad: usuario normal no puede reasignar ni tocar otros usuarios
             $incomingAssignees = [$currentUserId];
         } else {
             if (empty($incomingAssignees)) {
-                return ['success' => false, 'error' => 'Debes seleccionar al menos un usuario.'];
+                return [
+                    'success' => false,
+                    'error'   => 'Debes seleccionar al menos un usuario.',
+                ];
             }
         }
 
         // ==================================================
-        // 8) Determinar área final según scope
+        // 9) Determinar área final
         // ==================================================
         $idAreaPost  = (int)($data['id_area'] ?? ($task['id_area'] ?? 0));
         $idAreaFinal = 0;
 
-        if (($scope['mode'] ?? '') === 'super') {
-            // Gerencia puede escoger cualquier área
+        if ($scopeMode === 'super') {
             $idAreaFinal = $idAreaPost;
-        } elseif (($scope['mode'] ?? '') === 'division') {
-            // Jefe de división puede escoger un área, pero debe pertenecer a su división
+        } elseif ($scopeMode === 'division') {
             $idAreaFinal = $idAreaPost;
 
             $divisionId = (int)($scope['divisionId'] ?? 0);
-            if ($divisionId <= 0) return ['success' => false, 'error' => 'No se pudo determinar la división del jefe.'];
-            if ($idAreaFinal <= 0) return ['success' => false, 'error' => 'Debes seleccionar un área.'];
+
+            if ($divisionId <= 0) {
+                return [
+                    'success' => false,
+                    'error'   => 'No se pudo determinar la división del jefe.',
+                ];
+            }
+
+            if ($idAreaFinal <= 0) {
+                return [
+                    'success' => false,
+                    'error'   => 'Debes seleccionar un área.',
+                ];
+            }
 
             if (method_exists($this->tareaModel, 'isAreaInDivision')) {
                 if (!$this->tareaModel->isAreaInDivision($idAreaFinal, $divisionId)) {
-                    return ['success' => false, 'error' => 'Área inválida para tu división.'];
+                    return [
+                        'success' => false,
+                        'error'   => 'Área inválida para tu división.',
+                    ];
                 }
             }
         } else {
-            // Jefe de área o usuario normal: área fija
             $idAreaFinal = (int)($scope['areaId'] ?? ($task['id_area'] ?? 0));
         }
 
         if ($idAreaFinal <= 0) {
-            return ['success' => false, 'error' => 'Área inválida.'];
+            return [
+                'success' => false,
+                'error'   => 'Área inválida.',
+            ];
         }
 
         // ==================================================
-        // 9) Validar usuarios vs área (solo si puede gestionar)
+        // 10) Validar usuarios del área
         // ==================================================
         if ($canManageAssignees) {
             $usuariosArea = $this->getUsersByArea($idAreaFinal);
             $idsArea      = array_map(static fn($u) => (int)($u['id_user'] ?? 0), $usuariosArea);
 
-            // jefe division / super puede autoasignarse aunque no pertenezca al área elegida
-            $allowSelfOutsideArea = in_array((string)($scope['mode'] ?? ''), ['division', 'super'], true);
+            $allowSelfOutsideArea = in_array($scopeMode, ['division', 'super'], true);
 
             foreach ($incomingAssignees as $uid) {
                 if ($allowSelfOutsideArea && (int)$uid === $currentUserId) {
                     continue;
                 }
+
                 if (!in_array((int)$uid, $idsArea, true)) {
-                    return ['success' => false, 'error' => 'Uno o más usuarios no pertenecen al área seleccionada.'];
+                    return [
+                        'success' => false,
+                        'error'   => 'Uno o más usuarios no pertenecen al área seleccionada.',
+                    ];
                 }
             }
         }
 
         // ==================================================
-        // 10) ✅ BLOQUE CRÍTICO: REGLA FECHAS (CADENA JEFE INMEDIATO)
+        // 11) Blindaje fecha_inicio
         // ==================================================
-
-        // 10.1) fecha_inicio SIEMPRE fija (blindaje)
-        // Si viene en POST, la ignoramos.
         if (array_key_exists('fecha_inicio', $data)) {
             $data['fecha_inicio'] = (string)($task['fecha_inicio'] ?? '');
         }
 
-        // 10.2) Detectar si el POST intenta tocar fecha_fin
+        // ==================================================
+        // 12) Detectar fecha_fin enviada
+        // ==================================================
         $hasEndPost = array_key_exists('fecha_fin', $data);
 
-        // 10.3) Validar “supervisor directo de TODOS” los asignados que quedarán
-        // - Si el usuario puede gestionar asignados, validamos contra incomingAssignees (lo final).
-        // - Si NO puede, validamos contra los que ya existen (pero igual NO podrá cambiar fecha_fin, porque no es supervisor directo en modo self).
+        // ==================================================
+        // 13) Validar supervisor directo de todos
+        // ==================================================
         $assigneesToCheck = $existingAssignees;
         if ($canManageAssignees) {
             $assigneesToCheck = $incomingAssignees;
@@ -1567,23 +1618,28 @@ class TareaService
 
         if (!empty($assigneesToCheck)) {
             if ($isSuper) {
-                // Gerencia siempre pasa
                 $isDirectSupervisorOfAll = true;
             } else {
                 $ok = true;
 
                 foreach ($assigneesToCheck as $assigneeId) {
+                    $assigneeId = (int)$assigneeId;
+
+                    // ✅ si el jefe está asignado también, no bloquear por eso
+                    if ($assigneeId === $currentUserId) {
+                        continue;
+                    }
+
                     $rowSup = $db->query(
                         'SELECT id_supervisor
                        FROM public."USER"
                       WHERE id_user = ?
                       LIMIT 1',
-                        [(int)$assigneeId]
+                        [$assigneeId]
                     )->getRowArray();
 
                     $supId = (int)($rowSup['id_supervisor'] ?? 0);
 
-                    // ✅ Cadena: solo jefe inmediato
                     if (!($supId > 0 && $supId === $currentUserId)) {
                         $ok = false;
                         break;
@@ -1594,110 +1650,135 @@ class TareaService
             }
         }
 
-        // 10.4) Permiso real para cambio DIRECTO de fechas
-        $canDirectChangeDates = ($isSuper || $isDirectSupervisorOfAll);
+        // ==================================================
+        // 14) Permiso real para cambio directo de fecha
+        // ==================================================
+        $canDirectChangeDates =
+            $isSuper
+            || $isAreaBossScope
+            || $isDivisionBossScope
+            || $isDirectSupervisorOfAll;
 
         // ==================================================
-        // 11) Construir update común (campos compartidos por el batch)
+        // 15) Update común
         // ==================================================
         $commonUpdate = [];
 
-        // Área: solo si puede gestionar o es super
         if ($canManageAssignees || $isSuper) {
             $commonUpdate['id_area'] = $idAreaFinal;
         }
 
-        // Título
         if (($canManageAssignees || $isSuper) && isset($data['titulo'])) {
             $commonUpdate['titulo'] = trim((string)$data['titulo']);
         }
 
-        // Descripción
         if (($canManageAssignees || $isSuper) && array_key_exists('descripcion', $data)) {
             $desc = trim((string)$data['descripcion']);
             $commonUpdate['descripcion'] = ($desc !== '' ? $desc : null);
         }
 
-        // Estado (si lo usas)
         $estadoPost = null;
         if (($canManageAssignees || $isSuper) && isset($data['id_estado_tarea'])) {
             $estadoPost = (int)$data['id_estado_tarea'];
         }
 
         // ==================================================
-        // 12) ✅ FECHA FIN:
-        // - Solo se aplica si canDirectChangeDates
-        // - Si NO tiene permiso y viene en POST:
-        //     -> se ignora sin romper guardado (no error)
-        // - edit_count NO se incrementa aquí (conteo solo si se aprueba)
+        // 16) Lógica de cambio de fecha + contador
         // ==================================================
-        if ($hasEndPost) {
+        $maxDateEdits            = 3;
+        $currentEditCount        = 0;
+        $newEditCount            = 0;
+        $dateChangedDirect       = false;
+        $mustForceNotDoneByLimit = false;
 
+        // contador real del grupo afectado
+        foreach ($rowsToAffect as $row) {
+            $rowCount = (int)($row['edit_count'] ?? 0);
+            if ($rowCount > $currentEditCount) {
+                $currentEditCount = $rowCount;
+            }
+        }
+
+        $newEditCount = $currentEditCount;
+
+        if ($hasEndPost) {
             $incomingEndRaw = trim((string)($data['fecha_fin'] ?? ''));
 
-            // Si viene vacío y se pretendía cambiar, mantenemos tu regla de "obligatoria"
-            // PERO: si el usuario NO tiene permiso, no lo vamos a considerar un error aquí.
+            if (!$canDirectChangeDates) {
+                return [
+                    'success' => false,
+                    'error'   => 'No tienes permisos para cambiar la fecha u hora de finalización de esta tarea.',
+                ];
+            }
+
             if ($incomingEndRaw === '') {
-                if ($canDirectChangeDates) {
-                    return ['success' => false, 'error' => 'La fecha final es obligatoria.'];
-                } else {
-                    // No tiene permiso para tocar fecha_fin -> ignoramos
-                    unset($data['fecha_fin']);
-                    $hasEndPost = false;
-                }
+                return [
+                    'success' => false,
+                    'error'   => 'La fecha final es obligatoria.',
+                ];
             }
 
-            if ($hasEndPost && $canDirectChangeDates) {
-
-                $incomingEndDt = $this->parseLocalDateTime($incomingEndRaw);
-                if (!$incomingEndDt) {
-                    return ['success' => false, 'error' => 'La fecha final es obligatoria.'];
-                }
-
-                // Fecha inicio fija desde DB
-                $startRaw = (string)($task['fecha_inicio'] ?? '');
-                $startDt  = $this->parseLocalDateTime($startRaw);
-
-                if (!$startDt) {
-                    return ['success' => false, 'error' => 'No se pudo leer la fecha de inicio actual.'];
-                }
-
-                // Validaciones:
-                // - fin >= inicio
-                // - fin no en pasado (por día)
-                $todayKey = $this->todayKey();
-                if ($this->dayKey($incomingEndDt) < $todayKey) {
-                    return ['success' => false, 'error' => 'La fecha final no puede ser anterior a la fecha actual.'];
-                }
-
-                if ($incomingEndDt < $startDt) {
-                    return ['success' => false, 'error' => 'La fecha final no puede ser menor a la fecha de inicio.'];
-                }
-
-                // ✅ Aplicar SOLO fecha_fin (fecha_inicio NO se toca)
-                $commonUpdate['fecha_fin'] = $this->toDbDateTime($incomingEndDt);
-
-                // Prioridad automática
-                $commonUpdate['id_prioridad'] = $this->autoPriorityFromEnd(
-                    $incomingEndDt,
-                    (int)($task['id_prioridad'] ?? 0)
-                );
+            $incomingEndDt = $this->parseLocalDateTime($incomingEndRaw);
+            if (!$incomingEndDt) {
+                return [
+                    'success' => false,
+                    'error'   => 'La fecha final es obligatoria.',
+                ];
             }
 
-            if ($hasEndPost && !$canDirectChangeDates) {
-                /**
-                 * ✅ Usuario NO puede cambiar fecha fin directo.
-                 * - No devolvemos error para no romper edición de título/desc
-                 * - Ignoramos el intento
-                 * - El cambio real debe ir por requestReviewChange('date_change') con motivo
-                 */
-                unset($data['fecha_fin']);
-                $hasEndPost = false;
+            $startRaw = (string)($task['fecha_inicio'] ?? '');
+            $startDt  = $this->parseLocalDateTime($startRaw);
+
+            if (!$startDt) {
+                return [
+                    'success' => false,
+                    'error'   => 'No se pudo leer la fecha de inicio actual.',
+                ];
+            }
+
+            if ($incomingEndDt < $startDt) {
+                return [
+                    'success' => false,
+                    'error'   => 'La fecha final no puede ser menor a la fecha de inicio.',
+                ];
+            }
+
+            $incomingEndDb = $this->toDbDateTime($incomingEndDt);
+            $currentEndDb  = (string)($task['fecha_fin'] ?? '');
+
+            // ✅ Solo consume contador si realmente cambió la fecha/hora
+            if ($incomingEndDb !== $currentEndDb) {
+                $dateChangedDirect = true;
+
+                if ($currentEditCount >= $maxDateEdits) {
+                    return [
+                        'success' => false,
+                        'error'   => 'Esta actividad ya alcanzó el máximo de 3 cambios de fecha aprobados/directos.',
+                    ];
+                }
+
+                $newEditCount = $currentEditCount + 1;
+            }
+
+            $commonUpdate['fecha_fin'] = $incomingEndDb;
+
+            $commonUpdate['id_prioridad'] = $this->autoPriorityFromEnd(
+                $incomingEndDt,
+                (int)($task['id_prioridad'] ?? 0)
+            );
+
+            if ($dateChangedDirect && $this->taskColumnExists('edit_count')) {
+                $commonUpdate['edit_count'] = $newEditCount;
+            }
+
+            // ✅ si llegó al límite, pasa a No realizada en cadena
+            if ($this->taskColumnExists('edit_count') && $newEditCount >= $maxDateEdits) {
+                $mustForceNotDoneByLimit = true;
             }
         }
 
         // ==================================================
-        // 13) Cambios de asignados: keep / add / cancel
+        // 17) keep / add / cancel
         // ==================================================
         $toKeep   = array_values(array_intersect($existingAssignees, $incomingAssignees));
         $toAdd    = array_values(array_diff($incomingAssignees, $existingAssignees));
@@ -1710,10 +1791,11 @@ class TareaService
         }
 
         // ==================================================
-        // 14) Valores finales (para inserts)
+        // 18) Valores finales
         // ==================================================
         $tituloFinal = (string)($commonUpdate['titulo'] ?? ($task['titulo'] ?? ''));
-        $descFinal   = array_key_exists('descripcion', $commonUpdate)
+
+        $descFinal = array_key_exists('descripcion', $commonUpdate)
             ? $commonUpdate['descripcion']
             : ($task['descripcion'] ?? null);
 
@@ -1724,8 +1806,10 @@ class TareaService
         $prioridadFinal = (int)($commonUpdate['id_prioridad'] ?? ($task['id_prioridad'] ?? 0));
         $areaFinal      = (int)($commonUpdate['id_area'] ?? ($task['id_area'] ?? $idAreaFinal));
 
+        $editCountFinal = (int)($commonUpdate['edit_count'] ?? $currentEditCount);
+
         // ==================================================
-        // 15) Transacción: updates + inserts + cancelados
+        // 19) Transacción
         // ==================================================
         $db->transStart();
 
@@ -1735,18 +1819,20 @@ class TareaService
 
             $table = $db->table('public.tareas');
 
-            // --- A) Actualizar existentes (keep + cancel)
-            foreach ($groupRows as $r) {
+            // A) Actualizar existentes
+            foreach ($rowsToAffect as $r) {
                 $rowId    = (int)($r['id_tarea'] ?? 0);
                 $assignee = (int)($r['asignado_a'] ?? 0);
 
-                if ($rowId <= 0 || $assignee <= 0) continue;
+                if ($rowId <= 0 || $assignee <= 0) {
+                    continue;
+                }
 
-                // Cancelar removidos (solo si puede gestionar)
+                // cancelar removidos
                 if ($canManageAssignees && in_array($assignee, $toCancel, true)) {
                     $cancelUpdate = $commonUpdate;
 
-                    $cancelUpdate['id_estado_tarea'] = $this->estadoCancelada; // 5
+                    $cancelUpdate['id_estado_tarea'] = $this->estadoCancelada;
                     $cancelUpdate['completed_at']    = null;
 
                     if ($this->hasBatchUidColumn() && $batchUid) {
@@ -1757,12 +1843,18 @@ class TareaService
                     continue;
                 }
 
-                // Mantener => actualizar
+                // mantener / actualizar
                 if (in_array($assignee, $toKeep, true)) {
                     $rowUpdate = $commonUpdate;
 
-                    // Estado global (si se envió)
-                    if ($estadoPost !== null) {
+                    // ✅ si llegó al límite, pasa a No realizada
+                    if ($mustForceNotDoneByLimit) {
+                        $rowUpdate['id_estado_tarea'] = $this->estadoNoRealizada;
+                        $rowUpdate['completed_at']    = $nowStr;
+                    }
+
+                    // solo aplicar estado manual si NO fue forzada a No realizada
+                    if (!$mustForceNotDoneByLimit && $estadoPost !== null) {
                         $rowUpdate['id_estado_tarea'] = (int)$estadoPost;
 
                         if ((int)$estadoPost === $this->estadoRealizada) {
@@ -1782,17 +1874,16 @@ class TareaService
                 }
             }
 
-            // --- B) Insertar nuevos asignados
+            // B) Insertar nuevos asignados
             if ($canManageAssignees && !empty($toAdd)) {
                 foreach ($toAdd as $uid) {
-
                     $insert = [
                         'titulo'          => $tituloFinal,
                         'descripcion'     => $descFinal,
                         'id_prioridad'    => $prioridadFinal,
-                        'id_estado_tarea' => $estadoFinal,
-                        'fecha_inicio'    => $fechaIniFinal,  // ✅ fija
-                        'fecha_fin'       => $fechaFinFinal,  // ✅ puede venir del commonUpdate si supervisor cambió directo
+                        'id_estado_tarea' => $mustForceNotDoneByLimit ? $this->estadoNoRealizada : $estadoFinal,
+                        'fecha_inicio'    => $fechaIniFinal,
+                        'fecha_fin'       => $fechaFinFinal,
                         'id_area'         => $areaFinal,
                         'asignado_a'      => (int)$uid,
                         'asignado_por'    => (int)($task['asignado_por'] ?? $currentUserId),
@@ -1803,15 +1894,15 @@ class TareaService
                         $insert['batch_uid'] = $batchUid;
                     }
 
-                    // ✅ No tocamos edit_count aquí (solo se cuenta cuando se aprueba)
-                    // Si necesitas heredar valor existente sin incrementarlo:
+                    // heredar contador actualizado
                     if ($this->taskColumnExists('edit_count')) {
-                        $insert['edit_count'] = (int)($task['edit_count'] ?? 0);
+                        $insert['edit_count'] = $editCountFinal;
                     }
 
-                    $insert['completed_at'] = ($estadoFinal === $this->estadoRealizada) ? $nowStr : null;
+                    $insert['completed_at'] = (
+                        !$mustForceNotDoneByLimit && $estadoFinal === $this->estadoRealizada
+                    ) ? $nowStr : ($mustForceNotDoneByLimit ? $nowStr : null);
 
-                    // Limpieza de revisión (seguridad)
                     if ($this->hasReviewFlowColumns()) {
                         $insert['review_requested_state']     = null;
                         $insert['review_requested_at']        = null;
@@ -1829,24 +1920,38 @@ class TareaService
             }
         } catch (\Throwable $e) {
             $db->transRollback();
-            return ['success' => false, 'error' => 'Error actualizando la tarea.'];
+
+            return [
+                'success' => false,
+                'error'   => 'Error actualizando la tarea.',
+            ];
         }
 
         $db->transComplete();
 
         if ($db->transStatus() === false) {
-            return ['success' => false, 'error' => 'No se pudo completar la transacción.'];
+            return [
+                'success' => false,
+                'error'   => 'No se pudo completar la transacción.',
+            ];
         }
 
+        $remainingEdits = max(0, $maxDateEdits - $editCountFinal);
+
         return [
-            'success'   => true,
-            'updated'   => count($toKeep),
-            'added'     => count($toAdd),
-            'canceled'  => count($toCancel),
-            'batch_uid' => ($this->hasBatchUidColumn() ? (string)($batchUid ?? '') : ''),
+            'success'         => true,
+            'updated'         => count($toKeep),
+            'added'           => count($toAdd),
+            'canceled'        => count($toCancel),
+            'batch_uid'       => ($this->hasBatchUidColumn() ? (string)($batchUid ?? '') : ''),
+            'message'         => $mustForceNotDoneByLimit
+                ? 'Tarea actualizada y marcada como No realizada por alcanzar el límite de cambios.'
+                : 'Tarea actualizada correctamente.',
+            'edit_count'      => $editCountFinal,
+            'remaining_edits' => $remainingEdits,
+            'date_changed'    => $dateChangedDirect,
         ];
     }
-
     // ==================================================
     // CATÁLOGOS / PASSTHROUGH
     // ==================================================
@@ -2139,6 +2244,7 @@ class TareaService
         // ==================================================
         // 0) Contexto del usuario actual
         // ==================================================
+        // Si no llega el área actual, la tomamos de sesión.
         if ($currentUserAreaId === null) {
             $currentUserAreaId = (int) (session()->get('id_area') ?? 0);
         }
@@ -2146,24 +2252,31 @@ class TareaService
         // ==================================================
         // 0.1) Auto-marcar vencidas como No realizada
         // ==================================================
+        // Ejecuta la lógica que revisa tareas vencidas y las actualiza.
         $expiredUpdated = $this->markExpiredTasksAsNoRealizada();
 
         // ==================================================
         // 1) Scope real del usuario logueado
         // ==================================================
+        // Determina si el usuario es self, área, división o super.
         $scope = $this->resolveAssignScope($idUser, $currentUserAreaId);
 
         // ==================================================
         // 2) Usuarios del equipo según scope
         // ==================================================
+        // Obtiene los IDs del equipo visible para el usuario actual.
         $teamUserIds = $this->getTeamUserIdsFromScope($scope, $idUser);
 
+        // Conexión a base de datos.
         $db = Database::connect();
 
         // ==================================================
         // 3) Detectar si existen columnas del flujo de revisión
         // ==================================================
+        // Revisa si existen las columnas base del flujo de revisión.
         $hasReviewCols = $this->hasReviewFlowColumns();
+
+        // Revisa si existen las columnas extendidas del flujo de revisión.
         $hasExtendedReviewCols = method_exists($this, 'hasExtendedReviewColumns')
             ? $this->hasExtendedReviewColumns()
             : false;
@@ -2172,51 +2285,67 @@ class TareaService
          * ==================================================
          * Helper: Builder base con SELECT + JOINs
          * ==================================================
+         * Este closure construye la consulta base reutilizable
+         * para mis tareas, tareas asignadas, equipo y revisión.
          */
         $baseSelect = function () use ($db, $hasReviewCols, $hasExtendedReviewCols) {
+            // Creamos el builder principal apuntando a public.tareas con alias t.
             $b = $db->table('public.tareas t');
 
             // --------------------------------------------------
             // Campos base
             // --------------------------------------------------
             $select = [
+                // Identificadores y datos principales de la tarea.
                 't.id_tarea',
                 't.titulo',
                 't.descripcion',
                 't.fecha_inicio',
                 't.fecha_fin',
 
-                // ✅ NUEVO: para detectar tareas repetidas/serie
+                // Para detectar tareas repetidas/serie.
                 't.batch_uid',
                 't.recurrence_uid',
 
-                // ✅ NUEVO: evidencia
+                // Evidencia de tarea.
                 't.has_evidence',
                 't.evidence_url',
                 't.evidence_note',
 
+                // Estado y relaciones básicas.
                 't.id_estado_tarea',
                 't.asignado_a',
                 't.asignado_por',
                 't.id_area',
+
+                // Catálogos y datos enriquecidos.
                 'p.nombre_prioridad',
                 'e.nombre_estado',
                 'ar.nombre_area',
                 'ar.id_division',
+
+                // Nombre completo del asignado.
                 'ua.nombres || \' \' || ua.apellidos AS asignado_a_nombre',
+
+                // Nombre completo del usuario que asignó.
                 'up.nombres || \' \' || up.apellidos AS asignado_por_nombre',
+
+                // Supervisor directo del asignado.
                 'ua.id_supervisor AS asignado_a_supervisor',
             ];
 
             // --------------------------------------------------
             // Campos del flujo de revisión base
             // --------------------------------------------------
+            // Si existen columnas base de revisión, las agregamos reales.
             if ($hasReviewCols) {
                 $select[] = 't.edit_count';
                 $select[] = 't.review_requested_state';
                 $select[] = 't.review_requested_at';
                 $select[] = 'er.nombre_estado AS nombre_estado_solicitado';
             } else {
+                // Si no existen, devolvemos alias nulos/por defecto
+                // para evitar romper la vista o el resto del flujo.
                 $select[] = '0 AS edit_count';
                 $select[] = 'NULL::int AS review_requested_state';
                 $select[] = 'NULL::timestamp AS review_requested_at';
@@ -2226,6 +2355,8 @@ class TareaService
             // --------------------------------------------------
             // Campos extendidos del flujo de revisión
             // --------------------------------------------------
+            // Aquí agregamos también review_cancel_scope para que el supervisor
+            // pueda ver si la cancelación solicitada fue "solo hoy" o "en cadena".
             if ($hasExtendedReviewCols) {
                 $select[] = 't.review_action';
                 $select[] = 't.review_reason';
@@ -2234,7 +2365,10 @@ class TareaService
                 $select[] = 'ur.nombres || \' \' || ur.apellidos AS review_requested_by_nombre';
                 $select[] = 't.review_previous_state';
                 $select[] = 'ep.nombre_estado AS nombre_estado_anterior';
+                $select[] = 't.review_cancel_scope';
             } else {
+                // Si no existen las columnas extendidas, devolvemos nulls aliasados
+                // para mantener estable el formato del resultado.
                 $select[] = 'NULL::text AS review_action';
                 $select[] = 'NULL::text AS review_reason';
                 $select[] = 'NULL::timestamp AS review_requested_fecha_fin';
@@ -2242,36 +2376,49 @@ class TareaService
                 $select[] = 'NULL::text AS review_requested_by_nombre';
                 $select[] = 'NULL::int AS review_previous_state';
                 $select[] = 'NULL::text AS nombre_estado_anterior';
+                $select[] = 'NULL::text AS review_cancel_scope';
             }
 
+            // Aplicamos el SELECT completo al builder.
             $b->select($select, false);
 
             // --------------------------------------------------
             // Joins base
             // --------------------------------------------------
+            // Prioridad de la tarea.
             $b->join('public.prioridad p', 'p.id_prioridad = t.id_prioridad');
+
+            // Estado actual de la tarea.
             $b->join('public.estado_tarea e', 'e.id_estado_tarea = t.id_estado_tarea');
+
+            // Área relacionada.
             $b->join('public.area ar', 'ar.id_area = t.id_area', 'left');
+
+            // Usuario asignado.
             $b->join('public."USER" ua', 'ua.id_user = t.asignado_a', 'left');
+
+            // Usuario que asignó.
             $b->join('public."USER" up', 'up.id_user = t.asignado_por', 'left');
 
-            // Estado solicitado
+            // Estado solicitado en revisión.
             if ($hasReviewCols) {
                 $b->join('public.estado_tarea er', 'er.id_estado_tarea = t.review_requested_state', 'left');
             }
 
-            // Usuario que solicitó la revisión
+            // Usuario que solicitó la revisión y estado anterior.
             if ($hasExtendedReviewCols) {
                 $b->join('public."USER" ur', 'ur.id_user = t.review_requested_by', 'left');
                 $b->join('public.estado_tarea ep', 'ep.id_estado_tarea = t.review_previous_state', 'left');
             }
 
+            // Retornamos el builder armado.
             return $b;
         };
 
         // ==================================================
         // 4) Mis tareas
         // ==================================================
+        // Tareas asignadas al usuario actual.
         $misTareas = $baseSelect()
             ->where('t.asignado_a', $idUser)
             ->orderBy('t.fecha_inicio', 'DESC')
@@ -2279,7 +2426,7 @@ class TareaService
             ->getResultArray();
 
         // ==================================================
-        // 4.1) ✅ Mis tareas diarias (SOLO repetidas del día)
+        // 4.1) Mis tareas diarias (SOLO repetidas del día)
         // ==================================================
         $misDiarias = [
             'activas'  => [],
@@ -2287,13 +2434,12 @@ class TareaService
             'cerradas' => [],
         ];
 
-        // Rango HOY en TZ del sistema (America/Guayaquil)
+        // Rango de HOY en timezone del sistema.
         $todayStart = (new \DateTimeImmutable('now', $this->tz()))->setTime(0, 0, 0);
         $todayEnd   = (new \DateTimeImmutable('now', $this->tz()))->setTime(23, 59, 59);
 
         foreach ($misTareas as $t) {
-
-            // ✅ 1) Debe ser tarea repetida/serie
+            // Debe ser tarea repetida o perteneciente a una serie.
             $recUid = trim((string)($t['recurrence_uid'] ?? ''));
             $batUid = trim((string)($t['batch_uid'] ?? ''));
 
@@ -2301,14 +2447,13 @@ class TareaService
                 continue;
             }
 
-            // ✅ 2) Debe caer HOY por fecha_inicio
+            // Debe caer exactamente HOY por fecha_inicio.
             $rawStart = (string)($t['fecha_inicio'] ?? '');
             if ($rawStart === '') {
                 continue;
             }
 
             try {
-                // Viene como timestamptz: "2026-03-03 08:00:00-05"
                 $startDt = new \DateTimeImmutable($rawStart);
             } catch (\Throwable $e) {
                 continue;
@@ -2318,28 +2463,29 @@ class TareaService
                 continue;
             }
 
-            // ✅ 3) Clasificación por estado (según tus IDs)
+            // Clasificación por estado.
             $estado = (int)($t['id_estado_tarea'] ?? 0);
 
-            // Activas: Pendiente (1) o En proceso (2)
+            // Activas: pendiente o en proceso.
             if (in_array($estado, [$this->estadoPendiente, $this->estadoEnProceso], true)) {
                 $misDiarias['activas'][] = $t;
                 continue;
             }
 
-            // En revisión: (6)
+            // En revisión.
             if ($estado === $this->estadoEnRevision) {
                 $misDiarias['revision'][] = $t;
                 continue;
             }
 
-            // Cerradas: Realizada (3) / No realizada (4) / Cancelada (5)
+            // Cerradas: realizada, no realizada o cancelada.
             $misDiarias['cerradas'][] = $t;
         }
 
         // ==================================================
         // 5) Tareas asignadas por mí
         // ==================================================
+        // Tareas que yo asigné a otros usuarios.
         $tareasAsignadas = $baseSelect()
             ->where('t.asignado_por', $idUser)
             ->where('t.asignado_a <>', $idUser)
@@ -2356,6 +2502,7 @@ class TareaService
             $b = $baseSelect()
                 ->whereIn('t.asignado_a', $teamUserIds);
 
+            // Si el scope es de área, se restringe al área.
             if (($scope['mode'] ?? '') === 'area') {
                 $areaId = (int) ($scope['areaId'] ?? 0);
                 if ($areaId > 0) {
@@ -2363,6 +2510,7 @@ class TareaService
                 }
             }
 
+            // Si el scope es de división, se restringe a la división.
             if (($scope['mode'] ?? '') === 'division') {
                 $divisionId = (int) ($scope['divisionId'] ?? 0);
                 if ($divisionId > 0) {
@@ -2385,11 +2533,9 @@ class TareaService
             $pendientesBuilder = $baseSelect()
                 ->where('t.id_estado_tarea', $this->estadoEnRevision);
 
-            // --------------------------------------------------
-            // REGLA NUEVA:
+            // Regla:
             // - super ve todo
             // - los demás solo ven solicitudes de sus subordinados directos
-            // --------------------------------------------------
             if (($scope['mode'] ?? '') !== 'super') {
                 $pendientesBuilder->where('ua.id_supervisor', $idUser);
             }
@@ -2403,18 +2549,16 @@ class TareaService
         // ==================================================
         // 8) Alertas de vencimiento
         // ==================================================
+        // Construye alertas visuales según fechas de vencimiento.
         $dueAlerts = $this->buildDueAlertsForTasks($misTareas, $idUser);
 
         // ==================================================
-        // 9) Respuesta
+        // 9) Respuesta final
         // ==================================================
         return [
             'assignScope'        => $scope,
             'misTareas'          => $misTareas,
-
-            // ✅ NUEVO
             'misDiarias'         => $misDiarias,
-
             'tareasAsignadas'    => $tareasAsignadas,
             'tareasEquipo'       => $tareasEquipo,
             'pendientesRevision' => $pendientesRevision,
@@ -3390,7 +3534,8 @@ class TareaService
         int $taskId,
         int $currentUserId,
         int $currentUserAreaId,
-        ?string $reason = null
+        ?string $reason = null,
+        string $cancelScope = 'single_today'
     ): array {
         // ==================================================
         // 1) Validar columnas necesarias
@@ -3406,26 +3551,47 @@ class TareaService
             ];
         }
 
+        // ✅ columna extra para recordar si pidió cancelar solo hoy o en cadena
+        if (!$this->taskColumnExists('review_cancel_scope')) {
+            return [
+                'success' => false,
+                'error'   => 'Falta la columna review_cancel_scope en public.tareas. Ejecuta el ALTER TABLE correspondiente.',
+            ];
+        }
+
         // ==================================================
         // 2) Buscar tarea
         // ==================================================
         $task = $this->tareaModel->find($taskId);
 
         if (!$task) {
-            return ['success' => false, 'error' => 'Tarea no encontrada.'];
+            return [
+                'success' => false,
+                'error'   => 'Tarea no encontrada.',
+            ];
         }
 
         // ==================================================
         // 3) Validar que NO esté cerrada
         // ==================================================
-        $estadoActual = (int) ($task['id_estado_tarea'] ?? 0);
+        $estadoActual = (int)($task['id_estado_tarea'] ?? 0);
 
-        if (in_array($estadoActual, [$this->estadoRealizada, $this->estadoNoRealizada, $this->estadoCancelada], true)) {
-            return ['success' => false, 'error' => 'Esta tarea ya está cerrada y no se puede cancelar.'];
+        if (in_array($estadoActual, [
+            $this->estadoRealizada,
+            $this->estadoNoRealizada,
+            $this->estadoCancelada
+        ], true)) {
+            return [
+                'success' => false,
+                'error'   => 'Esta tarea ya está cerrada y no se puede cancelar.',
+            ];
         }
 
         if ($estadoActual === $this->estadoEnRevision) {
-            return ['success' => false, 'error' => 'Esta tarea ya está en revisión. Espera aprobación del supervisor.'];
+            return [
+                'success' => false,
+                'error'   => 'Esta tarea ya está en revisión. Espera aprobación del supervisor.',
+            ];
         }
 
         // ==================================================
@@ -3433,76 +3599,103 @@ class TareaService
         // ==================================================
         $scope = $this->resolveAssignScope($currentUserId, $currentUserAreaId);
 
+        $scopeMode           = (string)($scope['mode'] ?? 'self');
+        $isSuperUser         = ($scopeMode === 'super');
+        $isAreaBossScope     = ($scopeMode === 'area');
+        $isDivisionBossScope = ($scopeMode === 'division');
+        $isBossScope         = ($isSuperUser || $isAreaBossScope || $isDivisionBossScope);
+
         $db  = Database::connect();
         $now = (new \DateTimeImmutable('now', $this->tz()))->format('Y-m-d H:i:s');
 
-        $asignadoA = (int) ($task['asignado_a'] ?? 0);
+        $asignadoA = (int)($task['asignado_a'] ?? 0);
 
         $rowSup = $db->query(
             'SELECT id_supervisor
-         FROM public."USER"
-         WHERE id_user = ?
-         LIMIT 1',
+           FROM public."USER"
+          WHERE id_user = ?
+          LIMIT 1',
             [$asignadoA]
         )->getRowArray();
 
-        $assignedSupervisorId = (int) ($rowSup['id_supervisor'] ?? 0);
+        $assignedSupervisorId = (int)($rowSup['id_supervisor'] ?? 0);
 
         $isAssignee         = ($asignadoA === $currentUserId);
         $isDirectSupervisor = ($assignedSupervisorId > 0 && $assignedSupervisorId === $currentUserId);
-        $isSuperUser        = (($scope['mode'] ?? '') === 'super');
 
         // ==================================================
-        // 5) Regla nueva de autorización
+        // 5) Regla de autorización
         // ==================================================
-        // ✅ Solo permitido:
-        // - asignado => solicita revisión
+        // ✅ Permitidos:
+        // - asignado normal => manda a revisión
         // - supervisor directo => cancela directo
-        // - super/gerencia => cancela directo
-        if (!$isAssignee && !$isDirectSupervisor && !$isSuperUser) {
-            return ['success' => false, 'error' => 'No tienes permisos para cancelar esta tarea.'];
+        // - jefe de área => cancela directo
+        // - jefe de división => cancela directo
+        // - super => cancela directo
+        if (!$isAssignee && !$isDirectSupervisor && !$isBossScope) {
+            return [
+                'success' => false,
+                'error'   => 'No tienes permisos para cancelar esta tarea.',
+            ];
         }
 
         // ==================================================
-        // 6) Motivo
+        // 6) Normalizar motivo y alcance
         // ==================================================
-        $reason = trim((string) ($reason ?? ''));
+        $reason = trim((string)($reason ?? ''));
 
-        // ✅ Si es el asignado, el motivo es obligatorio
-        if ($isAssignee && $reason === '') {
-            return ['success' => false, 'error' => 'Debes escribir un motivo para solicitar la cancelación.'];
+        $cancelScope = in_array($cancelScope, ['single_today', 'all'], true)
+            ? $cancelScope
+            : 'single_today';
+
+        $recurrenceUid   = trim((string)($task['recurrence_uid'] ?? ''));
+        $isRecurringTask = ($recurrenceUid !== '');
+
+        // ✅ Si no es repetitiva, nunca puede ir en cadena
+        if (!$isRecurringTask) {
+            $cancelScope = 'single_today';
+        }
+
+        // ✅ solo el asignado normal manda a revisión
+        $assigneeMustRequestReview = ($isAssignee && !$isDirectSupervisor && !$isBossScope);
+
+        if ($assigneeMustRequestReview && $reason === '') {
+            return [
+                'success' => false,
+                'error'   => 'Debes escribir un motivo para solicitar la cancelación.',
+            ];
         }
 
         // ==================================================
-        // 7) CASO A: USUARIO ASIGNADO
-        //    => solicita revisión
+        // 7) CASO A: usuario asignado normal => REVISIÓN
         // ==================================================
-        if ($isAssignee) {
-
+        if ($assigneeMustRequestReview) {
             if ($assignedSupervisorId <= 0) {
-                return ['success' => false, 'error' => 'No tienes supervisor asignado (id_supervisor).'];
+                return [
+                    'success' => false,
+                    'error'   => 'No tienes supervisor asignado (id_supervisor).',
+                ];
             }
 
             $payload = [
                 // pasa a revisión
                 'id_estado_tarea'            => $this->estadoEnRevision,
 
-                // estado solicitado
+                // lo que pide cancelar
                 'review_requested_state'     => $this->estadoCancelada,
                 'review_requested_at'        => $now,
-
-                // datos extendidos
                 'review_action'              => 'cancel',
                 'review_reason'              => $reason,
                 'review_requested_by'        => $currentUserId,
                 'review_requested_fecha_fin' => null,
                 'review_previous_state'      => $estadoActual,
 
-                // limpieza aprobación previa
+                // ✅ guarda si pidió solo hoy o en cadena
+                'review_cancel_scope'        => $cancelScope,
+
+                // limpieza auditoría previa
                 'approved_by'                => null,
                 'approved_at'                => null,
-
-                // no se cierra todavía
                 'completed_at'               => null,
             ];
 
@@ -3511,43 +3704,108 @@ class TareaService
                     ->where('id_tarea', $taskId)
                     ->update($payload);
             } catch (\Throwable $e) {
-                return ['success' => false, 'error' => 'No se pudo enviar la cancelación a revisión.'];
+                return [
+                    'success' => false,
+                    'error'   => 'No se pudo enviar la cancelación a revisión.',
+                ];
             }
 
-            return ['success' => true, 'message' => 'Cancelación enviada a revisión de tu supervisor.'];
+            return [
+                'success' => true,
+                'message' => ($cancelScope === 'all')
+                    ? 'Cancelación en cadena enviada a revisión de tu supervisor.'
+                    : 'Cancelación del día enviada a revisión de tu supervisor.',
+            ];
         }
 
         // ==================================================
-        // 8) CASO B: SUPERVISOR DIRECTO / SUPER
-        //    => cancela directo
+        // 8) CASO B: supervisor / jefe / super => cancela directo
         // ==================================================
-        $payload = [
-            'id_estado_tarea'            => $this->estadoCancelada,
-            'completed_at'               => null,
+        // ✅ Regla:
+        // - repetitiva + all => desde esta tarea hacia futuras
+        // - repetitiva + single_today => solo esta fila
+        // - normal => solo esta fila
+        $rowsToAffect = [$task];
 
-            // limpieza revisión
-            'review_requested_state'     => null,
-            'review_requested_at'        => null,
-            'review_action'              => null,
-            'review_reason'              => null,
-            'review_requested_by'        => null,
-            'review_requested_fecha_fin' => null,
-            'review_previous_state'      => null,
+        if ($isRecurringTask && $cancelScope === 'all') {
+            $taskFechaInicio = trim((string)($task['fecha_inicio'] ?? ''));
 
-            // auditoría
-            'approved_by'                => $currentUserId,
-            'approved_at'                => $now,
-        ];
+            if ($taskFechaInicio !== '') {
+                $rowsToAffect = $db->query(
+                    'SELECT *
+                   FROM public.tareas
+                  WHERE recurrence_uid = ?
+                    AND fecha_inicio >= ?
+               ORDER BY fecha_inicio ASC, id_tarea ASC',
+                    [$recurrenceUid, $taskFechaInicio]
+                )->getResultArray();
+            }
+        }
+
+        if (empty($rowsToAffect)) {
+            $rowsToAffect = [$task];
+        }
+
+        // ==================================================
+        // 9) Ejecutar cancelación directa
+        // ==================================================
+        $db->transStart();
 
         try {
-            $db->table('public.tareas')
-                ->where('id_tarea', $taskId)
-                ->update($payload);
+            foreach ($rowsToAffect as $row) {
+                $rowId = (int)($row['id_tarea'] ?? 0);
+
+                if ($rowId <= 0) {
+                    continue;
+                }
+
+                $payload = [
+                    'id_estado_tarea'            => $this->estadoCancelada,
+                    'completed_at'               => null,
+
+                    // limpieza revisión
+                    'review_requested_state'     => null,
+                    'review_requested_at'        => null,
+                    'review_action'              => null,
+                    'review_reason'              => null,
+                    'review_requested_by'        => null,
+                    'review_requested_fecha_fin' => null,
+                    'review_previous_state'      => null,
+                    'review_cancel_scope'        => null,
+
+                    // auditoría
+                    'approved_by'                => $currentUserId,
+                    'approved_at'                => $now,
+                ];
+
+                $db->table('public.tareas')
+                    ->where('id_tarea', $rowId)
+                    ->update($payload);
+            }
         } catch (\Throwable $e) {
-            return ['success' => false, 'error' => 'Error cancelando la actividad.'];
+            $db->transRollback();
+
+            return [
+                'success' => false,
+                'error'   => 'Error cancelando la actividad.',
+            ];
         }
 
-        return ['success' => true, 'message' => 'Actividad cancelada correctamente.'];
+        $db->transComplete();
+
+        if ($db->transStatus() === false) {
+            return [
+                'success' => false,
+                'error'   => 'No se pudo completar la cancelación.',
+            ];
+        }
+
+        return [
+            'success' => true,
+            'message' => (count($rowsToAffect) > 1)
+                ? 'Actividades repetitivas canceladas en cadena correctamente.'
+                : 'Actividad cancelada correctamente.',
+        ];
     }
     // ==================================================
     // FLUJO DE REVISIÓN (OPCIONAL, SI EXISTEN COLUMNAS)
@@ -3855,7 +4113,6 @@ class TareaService
             return ['success' => false, 'error' => 'Esta tarea ya está cerrada y no se puede modificar.'];
         }
 
-        // Si ya está en revisión, no duplicar
         if ($estadoActual === $this->estadoEnRevision) {
             return ['success' => false, 'error' => 'Esta tarea ya está en revisión.'];
         }
@@ -3865,50 +4122,73 @@ class TareaService
         // ==================================================
         $db = Database::connect();
 
-        // Scope del usuario actual (solo para detectar super)
         $scope = $this->resolveAssignScope($currentUserId, $currentUserAreaId);
-        $isSuperUser = (($scope['mode'] ?? '') === 'super');
+        $scopeMode           = (string)($scope['mode'] ?? 'self');
+        $isSuperUser         = ($scopeMode === 'super');
+        $isAreaBossScope     = ($scopeMode === 'area');
+        $isDivisionBossScope = ($scopeMode === 'division');
+        $isBossScope         = ($isSuperUser || $isAreaBossScope || $isDivisionBossScope);
 
         // ==================================================
-        // 7) Obtener asignados REALES del batch
-        //    (regla cadena jefe inmediato aplica a TODOS)
+        // 7) Identidad del actor
+        // ==================================================
+        $asignadoA   = (int)($task['asignado_a'] ?? 0);
+        $asignadoPor = (int)($task['asignado_por'] ?? 0);
+
+        $isAssignee = ($asignadoA === $currentUserId);
+
+        // ✅ Si la tarea está asignada al jefe o autoasignada para él,
+        // solo afecta esa fila, no la cadena
+        $isAssignedToCurrentUser = ($asignadoA === $currentUserId);
+        $isSelfAssigned          = ($asignadoA === $currentUserId && $asignadoPor === $currentUserId);
+        $mustOnlyAffectThisRow   = ($isAssignedToCurrentUser || $isSelfAssigned);
+
+        // ==================================================
+        // 8) Obtener batch actual
         // ==================================================
         $groupRows = $this->getBatchRowsForTask($task);
 
         $assignees = [];
         foreach ($groupRows as $r) {
             $aid = (int)($r['asignado_a'] ?? 0);
-            if ($aid > 0) $assignees[] = $aid;
+            if ($aid > 0) {
+                $assignees[] = $aid;
+            }
         }
         $assignees = array_values(array_unique($assignees));
 
         if (empty($assignees)) {
-            // fallback: al menos el asignado_a actual
             $a = (int)($task['asignado_a'] ?? 0);
-            if ($a > 0) $assignees = [$a];
+            if ($a > 0) {
+                $assignees = [$a];
+            }
         }
 
         // ==================================================
-        // 8) Identidad del actor
-        // - isAssignee: solo si el currentUser es asignado de ESA fila
-        // - isDirectSupervisorOfAll: solo si es supervisor directo de TODOS los asignados del batch
+        // 9) Supervisor directo de todos los asignados del batch
         // ==================================================
-        $asignadoA = (int)($task['asignado_a'] ?? 0);
-        $isAssignee = ($asignadoA === $currentUserId);
-
         $isDirectSupervisorOfAll = false;
+
         if ($isSuperUser) {
             $isDirectSupervisorOfAll = true;
         } else {
             $ok = true;
 
             foreach ($assignees as $assigneeId) {
+                $assigneeId = (int)$assigneeId;
+
+                // ✅ Si el supervisor/jefe está asignado en esa misma fila,
+                // no bloquear por eso
+                if ($assigneeId === $currentUserId) {
+                    continue;
+                }
+
                 $rowSup = $db->query(
                     'SELECT id_supervisor
                    FROM public."USER"
                   WHERE id_user = ?
                   LIMIT 1',
-                    [(int)$assigneeId]
+                    [$assigneeId]
                 )->getRowArray();
 
                 $supId = (int)($rowSup['id_supervisor'] ?? 0);
@@ -3923,161 +4203,248 @@ class TareaService
         }
 
         // ==================================================
-        // 9) Autorización final
-        // ✅ Solo:
-        // - asignado => solicita revisión
-        // - supervisor directo de TODOS => aplica directo
-        // - super => aplica directo
+        // 10) Autorización final
         // ==================================================
-        if (!$isAssignee && !$isDirectSupervisorOfAll && !$isSuperUser) {
+        // ✅ Permitido:
+        // - asignado normal => solicita revisión
+        // - supervisor directo de todos => aplica directo
+        // - jefe de área => aplica directo
+        // - jefe de división => aplica directo
+        // - super => aplica directo
+        if (!$isAssignee && !$isDirectSupervisorOfAll && !$isBossScope) {
             return ['success' => false, 'error' => 'No autorizado para solicitar o aplicar este cambio.'];
         }
 
         $now = (new \DateTimeImmutable('now', $this->tz()))->format('Y-m-d H:i:s');
 
         // ==================================================
-        // 10) CASO A: Supervisor directo (de todos) / Super
+        // 11) Determinar filas a afectar
         // ==================================================
-        if ($isDirectSupervisorOfAll || $isSuperUser) {
+        $rowsToAffect = [$task];
+
+        $recurrenceUid = trim((string)($task['recurrence_uid'] ?? ''));
+
+        // A) Jefe / super => cambio/cancelación directa en cadena
+        if ($isBossScope && !$mustOnlyAffectThisRow) {
+            if ($recurrenceUid !== '') {
+                $rowsToAffect = $db->query(
+                    'SELECT *
+                   FROM public.tareas
+                  WHERE recurrence_uid = ?
+               ORDER BY id_tarea ASC',
+                    [$recurrenceUid]
+                )->getResultArray();
+            } else {
+                $rowsToAffect = $groupRows;
+            }
+        }
+        // B) Supervisor directo => batch actual
+        elseif ($isDirectSupervisorOfAll && !$isAssignee) {
+            $rowsToAffect = $groupRows;
+        }
+        // C) Asignado normal => si es repetida, solo sus propias repetidas
+        elseif ($isAssignee) {
+            if ($recurrenceUid !== '') {
+                $rowsToAffect = $db->query(
+                    'SELECT *
+                   FROM public.tareas
+                  WHERE recurrence_uid = ?
+                    AND asignado_a = ?
+               ORDER BY id_tarea ASC',
+                    [$recurrenceUid, $currentUserId]
+                )->getResultArray();
+            } else {
+                $rowsToAffect = [$task];
+            }
+        }
+
+        if (empty($rowsToAffect)) {
+            $rowsToAffect = [$task];
+        }
+
+        // ==================================================
+        // 12) CASO A: Jefe / Supervisor / Super => aplica directo
+        // ==================================================
+        if (($isDirectSupervisorOfAll && !$isAssignee) || $isBossScope) {
 
             // --------------------------------------------------
-            // A1) Cancelación directa (NO toca edit_count)
+            // A1) Cancelación directa
             // --------------------------------------------------
             if ($action === 'cancel') {
-
-                $payload = [
-                    'id_estado_tarea'            => $this->estadoCancelada,
-                    'completed_at'               => null,
-
-                    // Limpieza total de revisión
-                    'review_requested_state'     => null,
-                    'review_requested_at'        => null,
-                    'review_action'              => null,
-                    'review_reason'              => null,
-                    'review_requested_by'        => null,
-                    'review_requested_fecha_fin' => null,
-                    'review_previous_state'      => null,
-
-                    // Auditoría
-                    'approved_by'                => $currentUserId,
-                    'approved_at'                => $now,
-                ];
+                $db->transStart();
 
                 try {
-                    $db->table('public.tareas')
-                        ->where('id_tarea', $taskId)
-                        ->update($payload);
+                    foreach ($rowsToAffect as $row) {
+                        $rowId = (int)($row['id_tarea'] ?? 0);
+                        if ($rowId <= 0) {
+                            continue;
+                        }
+
+                        $payload = [
+                            'id_estado_tarea'            => $this->estadoCancelada,
+                            'completed_at'               => null,
+
+                            'review_requested_state'     => null,
+                            'review_requested_at'        => null,
+                            'review_action'              => null,
+                            'review_reason'              => null,
+                            'review_requested_by'        => null,
+                            'review_requested_fecha_fin' => null,
+                            'review_previous_state'      => null,
+
+                            'approved_by'                => $currentUserId,
+                            'approved_at'                => $now,
+                        ];
+
+                        $db->table('public.tareas')
+                            ->where('id_tarea', $rowId)
+                            ->update($payload);
+                    }
                 } catch (\Throwable $e) {
+                    $db->transRollback();
                     return ['success' => false, 'error' => 'No se pudo cancelar la tarea directamente.'];
                 }
 
-                return ['success' => true, 'message' => 'La tarea fue cancelada directamente por el supervisor.'];
+                $db->transComplete();
+
+                if ($db->transStatus() === false) {
+                    return ['success' => false, 'error' => 'No se pudo completar la cancelación directa.'];
+                }
+
+                return [
+                    'success' => true,
+                    'message' => (count($rowsToAffect) > 1)
+                        ? 'Las actividades fueron canceladas directamente en cadena.'
+                        : 'La tarea fue cancelada directamente.',
+                ];
             }
 
             // --------------------------------------------------
             // A2) Cambio de fecha directo
-            // ✅ Aquí SÍ cuenta edit_count (porque ya se aprobó)
-            // ✅ Pero si edit_count >= 3, BLOQUEA (no deja cambiar más)
+            // ✅ descuenta edit_count
+            // ✅ si llega a 3 => No realizada en cadena
             // --------------------------------------------------
             if ($action === 'date_change') {
-
                 if (trim((string)$requestedEndRaw) === '') {
                     return ['success' => false, 'error' => 'Debes seleccionar la nueva fecha fin.'];
-                }
-
-                // ✅ Bloqueo por máximo 3 cambios
-                if ($this->taskColumnExists('edit_count')) {
-                    $currentEditCount = (int)($task['edit_count'] ?? 0);
-                    if ($currentEditCount >= 3) {
-                        return ['success' => false, 'error' => 'Esta tarea ya alcanzó el máximo de 3 cambios de fecha.'];
-                    }
                 }
 
                 $startRaw = (string)($task['fecha_inicio'] ?? '');
                 $startDt  = $this->parseLocalDateTime($startRaw);
                 $endDt    = $this->parseLocalDateTime((string)$requestedEndRaw);
 
-                if (!$startDt) return ['success' => false, 'error' => 'No se pudo leer la fecha inicio actual.'];
-                if (!$endDt)   return ['success' => false, 'error' => 'Fecha fin solicitada inválida.'];
+                if (!$startDt) {
+                    return ['success' => false, 'error' => 'No se pudo leer la fecha inicio actual.'];
+                }
+
+                if (!$endDt) {
+                    return ['success' => false, 'error' => 'Fecha fin solicitada inválida.'];
+                }
 
                 if ($endDt < $startDt) {
                     return ['success' => false, 'error' => 'La fecha fin solicitada no puede ser menor a la fecha inicio.'];
                 }
 
-                $today = $this->todayKey();
-                if ($this->dayKey($endDt) < $today) {
-                    return ['success' => false, 'error' => 'La fecha fin solicitada no puede ser anterior a la fecha actual.'];
+                // contador real del grupo afectado
+                $currentEditCount = 0;
+                foreach ($rowsToAffect as $row) {
+                    $rowCount = (int)($row['edit_count'] ?? 0);
+                    if ($rowCount > $currentEditCount) {
+                        $currentEditCount = $rowCount;
+                    }
                 }
 
-                // Recalcular prioridad
+                if ($currentEditCount >= 3) {
+                    return ['success' => false, 'error' => 'Esta actividad ya alcanzó el máximo de 3 cambios de fecha.'];
+                }
+
+                $taskEndDt = $this->parseLocalDateTime((string)($task['fecha_fin'] ?? ''));
+                $changed   = true;
+
+                if ($taskEndDt && $this->sameMinute($taskEndDt, $endDt)) {
+                    $changed = false;
+                }
+
+                $newEditCount = $currentEditCount;
+                if ($changed) {
+                    $newEditCount++;
+                }
+
+                $forceNoRealizada = ($newEditCount >= 3);
+
                 $newPriority = $this->autoPriorityFromEnd(
                     $endDt,
                     (int)($task['id_prioridad'] ?? 0)
                 );
 
-                // ✅ edit_count solo si cambió realmente (por minuto)
-                $payloadEditCount = null;
-                if ($this->taskColumnExists('edit_count')) {
-                    $taskEndDt = $this->parseLocalDateTime((string)($task['fecha_fin'] ?? ''));
-                    $changed = true;
-
-                    if ($taskEndDt && $this->sameMinute($taskEndDt, $endDt)) {
-                        $changed = false;
-                    }
-
-                    if ($changed) {
-                        $payloadEditCount = ((int)($task['edit_count'] ?? 0)) + 1;
-                    }
-                }
-
-                $payload = [
-                    'fecha_fin'                  => $this->toDbDateTime($endDt),
-                    'id_prioridad'               => $newPriority,
-
-                    // Mantener estado actual
-                    'id_estado_tarea'            => $estadoActual,
-                    'completed_at'               => null,
-
-                    // Limpieza total de revisión
-                    'review_requested_state'     => null,
-                    'review_requested_at'        => null,
-                    'review_action'              => null,
-                    'review_reason'              => null,
-                    'review_requested_by'        => null,
-                    'review_requested_fecha_fin' => null,
-                    'review_previous_state'      => null,
-
-                    // Auditoría
-                    'approved_by'                => $currentUserId,
-                    'approved_at'                => $now,
-                ];
-
-                if ($payloadEditCount !== null) {
-                    // ✅ Si aquí ya quedó en 4, igual se bloqueó arriba porque >=3 antes de sumar.
-                    $payload['edit_count'] = $payloadEditCount;
-                }
+                $db->transStart();
 
                 try {
-                    $db->table('public.tareas')
-                        ->where('id_tarea', $taskId)
-                        ->update($payload);
+                    foreach ($rowsToAffect as $row) {
+                        $rowId = (int)($row['id_tarea'] ?? 0);
+                        if ($rowId <= 0) {
+                            continue;
+                        }
+
+                        $payload = [
+                            'fecha_fin'                  => $this->toDbDateTime($endDt),
+                            'id_prioridad'               => $newPriority,
+
+                            'id_estado_tarea'            => $forceNoRealizada
+                                ? $this->estadoNoRealizada
+                                : (int)($row['id_estado_tarea'] ?? $estadoActual),
+
+                            'completed_at'               => $forceNoRealizada ? $now : null,
+
+                            'review_requested_state'     => null,
+                            'review_requested_at'        => null,
+                            'review_action'              => null,
+                            'review_reason'              => null,
+                            'review_requested_by'        => null,
+                            'review_requested_fecha_fin' => null,
+                            'review_previous_state'      => null,
+
+                            'approved_by'                => $currentUserId,
+                            'approved_at'                => $now,
+                        ];
+
+                        if ($this->taskColumnExists('edit_count') && $changed) {
+                            $payload['edit_count'] = $newEditCount;
+                        }
+
+                        $db->table('public.tareas')
+                            ->where('id_tarea', $rowId)
+                            ->update($payload);
+                    }
                 } catch (\Throwable $e) {
+                    $db->transRollback();
                     return ['success' => false, 'error' => 'No se pudo cambiar la fecha directamente.'];
                 }
 
-                return ['success' => true, 'message' => 'La fecha fue actualizada directamente por el supervisor.'];
+                $db->transComplete();
+
+                if ($db->transStatus() === false) {
+                    return ['success' => false, 'error' => 'No se pudo completar el cambio directo de fecha.'];
+                }
+
+                return [
+                    'success' => true,
+                    'message' => $forceNoRealizada
+                        ? 'La fecha fue actualizada y las actividades quedaron marcadas como No realizadas por alcanzar el límite de cambios.'
+                        : ((count($rowsToAffect) > 1)
+                            ? 'La fecha fue actualizada directamente en cadena.'
+                            : 'La fecha fue actualizada directamente.'),
+                ];
             }
         }
 
         // ==================================================
-        // 11) CASO B: Usuario asignado -> manda a REVISIÓN
-        // (NO toca edit_count)
+        // 13) CASO B: Usuario asignado => envía a revisión
         // ==================================================
         if (!$isAssignee) {
             return ['success' => false, 'error' => 'Solo el usuario asignado puede solicitar revisión.'];
         }
 
-        // Supervisor directo del asignado (solo para validar que exista)
         $rowSup = $db->query(
             'SELECT id_supervisor
            FROM public."USER"
@@ -4091,73 +4458,95 @@ class TareaService
             return ['success' => false, 'error' => 'No tienes supervisor asignado (id_supervisor).'];
         }
 
-        $payload = [
-            // Pasa a revisión
-            'id_estado_tarea'        => $this->estadoEnRevision,
+        $db->transStart();
 
-            // Guardar estado previo
-            'review_previous_state'  => $estadoActual,
-
-            // Guardar solicitud
-            'review_action'          => $action,
-            'review_reason'          => $reason,
-            'review_requested_by'    => $currentUserId,
-            'review_requested_at'    => $now,
-
-            // Limpiar aprobación previa
-            'approved_by'            => null,
-            'approved_at'            => null,
-        ];
-
-        // --------------------------------------------------
-        // B1) date_change solicitado (NO toca edit_count)
-        // --------------------------------------------------
-        if ($action === 'date_change') {
-
-            if (trim((string)$requestedEndRaw) === '') {
-                return ['success' => false, 'error' => 'Debes seleccionar la nueva fecha fin.'];
-            }
-
-            $startRaw = (string)($task['fecha_inicio'] ?? '');
-            $startDt  = $this->parseLocalDateTime($startRaw);
-            $endDt    = $this->parseLocalDateTime((string)$requestedEndRaw);
-
-            if (!$startDt) return ['success' => false, 'error' => 'No se pudo leer la fecha inicio actual.'];
-            if (!$endDt)   return ['success' => false, 'error' => 'Fecha fin solicitada inválida.'];
-
-            if ($endDt < $startDt) {
-                return ['success' => false, 'error' => 'La fecha fin solicitada no puede ser menor a la fecha inicio.'];
-            }
-
-            $today = $this->todayKey();
-            if ($this->dayKey($endDt) < $today) {
-                return ['success' => false, 'error' => 'La fecha fin solicitada no puede ser anterior a la fecha actual.'];
-            }
-
-            $payload['review_requested_fecha_fin'] = $this->toDbDateTime($endDt);
-            $payload['review_requested_state']     = $estadoActual;
-        }
-
-        // --------------------------------------------------
-        // B2) cancel solicitado
-        // --------------------------------------------------
-        if ($action === 'cancel') {
-            $payload['review_requested_state']     = $this->estadoCancelada;
-            $payload['review_requested_fecha_fin'] = null;
-        }
-
-        // --------------------------------------------------
-        // Guardar solicitud
-        // --------------------------------------------------
         try {
-            $db->table('public.tareas')
-                ->where('id_tarea', $taskId)
-                ->update($payload);
+            foreach ($rowsToAffect as $row) {
+                $rowId       = (int)($row['id_tarea'] ?? 0);
+                $rowEstado   = (int)($row['id_estado_tarea'] ?? $estadoActual);
+                $rowFechaIni = (string)($row['fecha_inicio'] ?? '');
+
+                if ($rowId <= 0) {
+                    continue;
+                }
+
+                if (in_array($rowEstado, [
+                    $this->estadoRealizada,
+                    $this->estadoNoRealizada,
+                    $this->estadoCancelada
+                ], true)) {
+                    continue;
+                }
+
+                if ($rowEstado === $this->estadoEnRevision) {
+                    continue;
+                }
+
+                $payload = [
+                    'id_estado_tarea'        => $this->estadoEnRevision,
+                    'review_previous_state'  => $rowEstado,
+                    'review_action'          => $action,
+                    'review_reason'          => $reason,
+                    'review_requested_by'    => $currentUserId,
+                    'review_requested_at'    => $now,
+                    'approved_by'            => null,
+                    'approved_at'            => null,
+                ];
+
+                if ($action === 'date_change') {
+                    if (trim((string)$requestedEndRaw) === '') {
+                        $db->transRollback();
+                        return ['success' => false, 'error' => 'Debes seleccionar la nueva fecha fin.'];
+                    }
+
+                    $startDt = $this->parseLocalDateTime($rowFechaIni);
+                    $endDt   = $this->parseLocalDateTime((string)$requestedEndRaw);
+
+                    if (!$startDt) {
+                        $db->transRollback();
+                        return ['success' => false, 'error' => 'No se pudo leer la fecha inicio actual.'];
+                    }
+
+                    if (!$endDt) {
+                        $db->transRollback();
+                        return ['success' => false, 'error' => 'Fecha fin solicitada inválida.'];
+                    }
+
+                    if ($endDt < $startDt) {
+                        $db->transRollback();
+                        return ['success' => false, 'error' => 'La fecha fin solicitada no puede ser menor a la fecha inicio.'];
+                    }
+
+                    $payload['review_requested_fecha_fin'] = $this->toDbDateTime($endDt);
+                    $payload['review_requested_state']     = $rowEstado;
+                }
+
+                if ($action === 'cancel') {
+                    $payload['review_requested_state']     = $this->estadoCancelada;
+                    $payload['review_requested_fecha_fin'] = null;
+                }
+
+                $db->table('public.tareas')
+                    ->where('id_tarea', $rowId)
+                    ->update($payload);
+            }
         } catch (\Throwable $e) {
+            $db->transRollback();
             return ['success' => false, 'error' => 'No se pudo enviar a revisión.'];
         }
 
-        return ['success' => true, 'message' => 'Solicitud enviada a revisión de tu supervisor.'];
+        $db->transComplete();
+
+        if ($db->transStatus() === false) {
+            return ['success' => false, 'error' => 'No se pudo completar el envío a revisión.'];
+        }
+
+        return [
+            'success' => true,
+            'message' => (count($rowsToAffect) > 1)
+                ? 'Solicitud enviada a revisión en cadena.'
+                : 'Solicitud enviada a revisión de tu supervisor.',
+        ];
     }
     public function reviewBatch(
         array $taskIds,
@@ -4166,9 +4555,6 @@ class TareaService
         int $currentUserAreaId
     ): array {
 
-        // ==================================================
-        // 0) Validaciones de columnas necesarias
-        // ==================================================
         if (!$this->hasReviewFlowColumns()) {
             return $this->reviewColumnsMissingError();
         }
@@ -4180,12 +4566,16 @@ class TareaService
             ];
         }
 
-        // ==================================================
-        // 1) Normalizar IDs
-        // ==================================================
+        if (!$this->taskColumnExists('review_cancel_scope')) {
+            return [
+                'success' => false,
+                'error'   => 'Falta la columna review_cancel_scope en public.tareas. Ejecuta el ALTER TABLE correspondiente.',
+            ];
+        }
+
         $clean = [];
         foreach ($taskIds as $id) {
-            $n = (int) $id;
+            $n = (int)$id;
             if ($n > 0) {
                 $clean[] = $n;
             }
@@ -4196,71 +4586,42 @@ class TareaService
             return ['success' => false, 'error' => 'No seleccionaste tareas.'];
         }
 
-        // ==================================================
-        // 2) Validar acción
-        // ==================================================
         if (!in_array($action, ['approve', 'cancel_request', 'force_not_done'], true)) {
             return ['success' => false, 'error' => 'Acción inválida.'];
         }
 
-        // ==================================================
-        // 3) Scope para detectar gerencia
-        // ==================================================
         $scope = $this->resolveAssignScope($currentUserId, $currentUserAreaId);
 
         $db  = Database::connect();
         $now = (new \DateTimeImmutable('now', $this->tz()))->format('Y-m-d H:i:s');
 
-        /**
-         * ==================================================
-         * Aquí guardaremos tareas que al volver al estado anterior
-         * quedaron vencidas y necesitan actualización de hora.
-         * ==================================================
-         */
         $expiredTasks = [];
-
-        /**
-         * ==================================================
-         * Contador real de tareas procesadas.
-         * ==================================================
-         */
         $processed = 0;
 
-        // ==================================================
-        // 4) Transacción
-        // ==================================================
         $db->transStart();
 
         try {
             foreach ($clean as $taskId) {
-
-                // --------------------------------------------------
-                // 4.1) Cargar tarea
-                // --------------------------------------------------
-                $task = $this->tareaModel->find((int) $taskId);
+                $task = $this->tareaModel->find((int)$taskId);
                 if (!$task) {
                     continue;
                 }
 
-                // Solo procesamos si está en revisión
                 if ((int)($task['id_estado_tarea'] ?? 0) !== $this->estadoEnRevision) {
                     continue;
                 }
 
-                // --------------------------------------------------
-                // 4.2) Permisos: SOLO supervisor directo o super
-                // --------------------------------------------------
-                $asignadoA = (int) ($task['asignado_a'] ?? 0);
+                $asignadoA = (int)($task['asignado_a'] ?? 0);
 
                 $rowSup = $db->query(
                     'SELECT id_supervisor
-                 FROM public."USER"
-                 WHERE id_user = ?
-                 LIMIT 1',
+                   FROM public."USER"
+                  WHERE id_user = ?
+                  LIMIT 1',
                     [$asignadoA]
                 )->getRowArray();
 
-                $assignedSupervisorId = (int) ($rowSup['id_supervisor'] ?? 0);
+                $assignedSupervisorId = (int)($rowSup['id_supervisor'] ?? 0);
 
                 $isDirectSupervisor = ($assignedSupervisorId > 0 && $assignedSupervisorId === $currentUserId);
                 $isSuperUser        = (($scope['mode'] ?? '') === 'super');
@@ -4269,28 +4630,17 @@ class TareaService
                     continue;
                 }
 
-                // --------------------------------------------------
-                // 4.3) Datos de revisión
-                // --------------------------------------------------
-                $reviewAction = trim((string) ($task['review_action'] ?? ''));
-                $prevState    = (int) ($task['review_previous_state'] ?? 0);
+                $reviewAction = trim((string)($task['review_action'] ?? ''));
+                $prevState    = (int)($task['review_previous_state'] ?? 0);
 
                 if ($prevState <= 0) {
                     $prevState = $this->estadoEnProceso;
                 }
 
-                $requestedBy = (int)($task['review_requested_by'] ?? 0);
-                $decision    = ($action === 'cancel_request') ? 'rejected' : 'approved';
-
                 // ==================================================
-                // 4.4) CANCELAR SOLICITUD
-                // - Devuelve la tarea al estado anterior
-                // - Limpia la revisión pendiente
-                // - Si quedó vencida, la devolvemos al frontend
-                //   para actualizar solo la hora
+                // CANCELAR SOLICITUD
                 // ==================================================
                 if ($action === 'cancel_request') {
-
                     $payload = [
                         'id_estado_tarea'            => $prevState,
                         'review_requested_state'     => null,
@@ -4300,6 +4650,7 @@ class TareaService
                         'review_requested_by'        => null,
                         'review_requested_fecha_fin' => null,
                         'review_previous_state'      => null,
+                        'review_cancel_scope'        => null,
                         'approved_by'                => $currentUserId,
                         'approved_at'                => $now,
                         'completed_at'               => null,
@@ -4309,16 +4660,6 @@ class TareaService
                         ->where('id_tarea', (int)$taskId)
                         ->update($payload);
 
-                    /**
-                     * ============================================
-                     * Verificamos si al volver al estado anterior
-                     * la tarea ya quedó vencida.
-                     *
-                     * OJO:
-                     * Aquí NO la marcamos como no realizada.
-                     * Solo la reportamos al frontend.
-                     * ============================================
-                     */
                     $taskFechaFin = (string)($task['fecha_fin'] ?? '');
 
                     if (
@@ -4335,47 +4676,14 @@ class TareaService
                         ];
                     }
 
-                    if ($requestedBy > 0) {
-                        $details = [
-                            'id_tarea'            => (int)$taskId,
-                            'titulo'              => (string)($task['titulo'] ?? ''),
-                            'decision'            => 'rejected',
-                            'action'              => 'cancel_request',
-                            'requested_state'     => $task['review_requested_state'] ?? null,
-                            'previous_state'      => $task['review_previous_state'] ?? null,
-                            'requested_fecha_fin' => $task['review_requested_fecha_fin'] ?? null,
-                            'requested_reason'    => $task['review_reason'] ?? null,
-                            'result_estado'       => $payload['id_estado_tarea'] ?? null,
-                            'result_fecha_fin'    => null,
-                        ];
-
-                        $this->insertDecisionLog(
-                            (int)$taskId,
-                            $requestedBy,
-                            (int)$currentUserId,
-                            'rejected',
-                            'cancel_request',
-                            $details
-                        );
-
-                        $this->updateLatestReviewLogDecision(
-                            (int)$taskId,
-                            $requestedBy,
-                            'rejected',
-                            (int)$currentUserId,
-                            null
-                        );
-                    }
-
                     $processed++;
                     continue;
                 }
 
                 // ==================================================
-                // 4.5) FORZAR COMO NO REALIZADA
+                // FORZAR COMO NO REALIZADA
                 // ==================================================
                 if ($action === 'force_not_done') {
-
                     $payload = [
                         'id_estado_tarea'            => $this->estadoNoRealizada,
                         'review_requested_state'     => null,
@@ -4385,6 +4693,7 @@ class TareaService
                         'review_requested_by'        => null,
                         'review_requested_fecha_fin' => null,
                         'review_previous_state'      => null,
+                        'review_cancel_scope'        => null,
                         'approved_by'                => $currentUserId,
                         'approved_at'                => $now,
                         'completed_at'               => $now,
@@ -4394,119 +4703,50 @@ class TareaService
                         ->where('id_tarea', (int)$taskId)
                         ->update($payload);
 
-                    if ($requestedBy > 0) {
-                        $details = [
-                            'id_tarea'            => (int)$taskId,
-                            'titulo'              => (string)($task['titulo'] ?? ''),
-                            'decision'            => 'approved',
-                            'action'              => 'force_not_done',
-                            'requested_state'     => $task['review_requested_state'] ?? null,
-                            'previous_state'      => $task['review_previous_state'] ?? null,
-                            'requested_fecha_fin' => $task['review_requested_fecha_fin'] ?? null,
-                            'requested_reason'    => $task['review_reason'] ?? null,
-                            'result_estado'       => $payload['id_estado_tarea'] ?? null,
-                            'result_fecha_fin'    => null,
-                        ];
-
-                        $this->insertDecisionLog(
-                            (int)$taskId,
-                            $requestedBy,
-                            (int)$currentUserId,
-                            'approved',
-                            'force_not_done',
-                            $details
-                        );
-
-                        $this->updateLatestReviewLogDecision(
-                            (int)$taskId,
-                            $requestedBy,
-                            'approved',
-                            (int)$currentUserId,
-                            null
-                        );
-                    }
-
                     $processed++;
                     continue;
                 }
 
                 // ==================================================
-                // 4.6) APROBAR
+                // APROBAR CANCELACIÓN
                 // ==================================================
-
-                // --------------------------------------------------
-                // A) Cancelación solicitada => Cancelada
-                // --------------------------------------------------
                 if ($reviewAction === 'cancel') {
+                    $cancelScope   = (string)($task['review_cancel_scope'] ?? 'single_today');
+                    $cancelScope   = in_array($cancelScope, ['single_today', 'all'], true)
+                        ? $cancelScope
+                        : 'single_today';
 
-                    $payload = [
-                        'id_estado_tarea'            => $this->estadoCancelada,
-                        'completed_at'               => null,
+                    $recurrenceUid = trim((string)($task['recurrence_uid'] ?? ''));
+                    $taskFechaIni  = trim((string)($task['fecha_inicio'] ?? ''));
 
-                        'review_requested_state'     => null,
-                        'review_requested_at'        => null,
-                        'review_action'              => null,
-                        'review_reason'              => null,
-                        'review_requested_by'        => null,
-                        'review_requested_fecha_fin' => null,
-                        'review_previous_state'      => null,
+                    $rowsToAffect = [$task];
 
-                        'approved_by'                => $currentUserId,
-                        'approved_at'                => $now,
-                    ];
-
-                    $db->table('public.tareas')
-                        ->where('id_tarea', (int)$taskId)
-                        ->update($payload);
-
-                    if ($requestedBy > 0) {
-                        $details = [
-                            'id_tarea'            => (int)$taskId,
-                            'titulo'              => (string)($task['titulo'] ?? ''),
-                            'decision'            => $decision,
-                            'action'              => $reviewAction,
-                            'requested_state'     => $task['review_requested_state'] ?? null,
-                            'previous_state'      => $task['review_previous_state'] ?? null,
-                            'requested_fecha_fin' => $task['review_requested_fecha_fin'] ?? null,
-                            'requested_reason'    => $task['review_reason'] ?? null,
-                            'result_estado'       => $payload['id_estado_tarea'] ?? null,
-                            'result_fecha_fin'    => null,
-                        ];
-
-                        $this->insertDecisionLog(
-                            (int)$taskId,
-                            $requestedBy,
-                            (int)$currentUserId,
-                            $decision,
-                            $reviewAction,
-                            $details
-                        );
-
-                        $this->updateLatestReviewLogDecision(
-                            (int)$taskId,
-                            $requestedBy,
-                            $decision,
-                            (int)$currentUserId,
-                            null
-                        );
+                    // ✅ Solo si es repetitiva y pidió "all":
+                    // cancelar esta y futuras
+                    if ($cancelScope === 'all' && $recurrenceUid !== '' && $taskFechaIni !== '') {
+                        $rowsToAffect = $db->query(
+                            'SELECT *
+                           FROM public.tareas
+                          WHERE recurrence_uid = ?
+                            AND fecha_inicio >= ?
+                       ORDER BY fecha_inicio ASC, id_tarea ASC',
+                            [$recurrenceUid, $taskFechaIni]
+                        )->getResultArray();
                     }
 
-                    $processed++;
-                    continue;
-                }
+                    if (empty($rowsToAffect)) {
+                        $rowsToAffect = [$task];
+                    }
 
-                // --------------------------------------------------
-                // B) Cambio de fecha solicitado
-                // SOLO aquí incrementa edit_count
-                // --------------------------------------------------
-                if ($reviewAction === 'date_change') {
+                    foreach ($rowsToAffect as $row) {
+                        $rowId = (int)($row['id_tarea'] ?? 0);
+                        if ($rowId <= 0) {
+                            continue;
+                        }
 
-                    $reqFin = trim((string) ($task['review_requested_fecha_fin'] ?? ''));
-
-                    if ($reqFin === '') {
                         $payload = [
-                            'id_estado_tarea'            => $prevState,
-
+                            'id_estado_tarea'            => $this->estadoCancelada,
+                            'completed_at'               => null,
                             'review_requested_state'     => null,
                             'review_requested_at'        => null,
                             'review_action'              => null,
@@ -4514,7 +4754,38 @@ class TareaService
                             'review_requested_by'        => null,
                             'review_requested_fecha_fin' => null,
                             'review_previous_state'      => null,
+                            'review_cancel_scope'        => null,
+                            'approved_by'                => $currentUserId,
+                            'approved_at'                => $now,
+                        ];
 
+                        $db->table('public.tareas')
+                            ->where('id_tarea', $rowId)
+                            ->update($payload);
+
+                        $processed++;
+                    }
+
+                    continue;
+                }
+
+                // ==================================================
+                // APROBAR CAMBIO DE FECHA
+                // ==================================================
+                if ($reviewAction === 'date_change') {
+                    $reqFin = trim((string)($task['review_requested_fecha_fin'] ?? ''));
+
+                    if ($reqFin === '') {
+                        $payload = [
+                            'id_estado_tarea'            => $prevState,
+                            'review_requested_state'     => null,
+                            'review_requested_at'        => null,
+                            'review_action'              => null,
+                            'review_reason'              => null,
+                            'review_requested_by'        => null,
+                            'review_requested_fecha_fin' => null,
+                            'review_previous_state'      => null,
+                            'review_cancel_scope'        => null,
                             'approved_by'                => $currentUserId,
                             'approved_at'                => $now,
                             'completed_at'               => null,
@@ -4523,49 +4794,16 @@ class TareaService
                         $db->table('public.tareas')
                             ->where('id_tarea', (int)$taskId)
                             ->update($payload);
-
-                        if ($requestedBy > 0) {
-                            $details = [
-                                'id_tarea'            => (int)$taskId,
-                                'titulo'              => (string)($task['titulo'] ?? ''),
-                                'decision'            => $decision,
-                                'action'              => $reviewAction,
-                                'requested_state'     => $task['review_requested_state'] ?? null,
-                                'previous_state'      => $task['review_previous_state'] ?? null,
-                                'requested_fecha_fin' => $task['review_requested_fecha_fin'] ?? null,
-                                'requested_reason'    => $task['review_reason'] ?? null,
-                                'result_estado'       => $payload['id_estado_tarea'] ?? null,
-                                'result_fecha_fin'    => null,
-                            ];
-
-                            $this->insertDecisionLog(
-                                (int)$taskId,
-                                $requestedBy,
-                                (int)$currentUserId,
-                                $decision,
-                                $reviewAction,
-                                $details
-                            );
-
-                            $this->updateLatestReviewLogDecision(
-                                (int)$taskId,
-                                $requestedBy,
-                                $decision,
-                                (int)$currentUserId,
-                                null
-                            );
-                        }
 
                         $processed++;
                         continue;
                     }
 
-                    $editCount = (int) ($task['edit_count'] ?? 0);
+                    $editCount = (int)($task['edit_count'] ?? 0);
 
                     if ($editCount >= 3) {
                         $payload = [
                             'id_estado_tarea'            => $prevState,
-
                             'review_requested_state'     => null,
                             'review_requested_at'        => null,
                             'review_action'              => null,
@@ -4573,7 +4811,7 @@ class TareaService
                             'review_requested_by'        => null,
                             'review_requested_fecha_fin' => null,
                             'review_previous_state'      => null,
-
+                            'review_cancel_scope'        => null,
                             'approved_by'                => $currentUserId,
                             'approved_at'                => $now,
                             'completed_at'               => null,
@@ -4582,38 +4820,6 @@ class TareaService
                         $db->table('public.tareas')
                             ->where('id_tarea', (int)$taskId)
                             ->update($payload);
-
-                        if ($requestedBy > 0) {
-                            $details = [
-                                'id_tarea'            => (int)$taskId,
-                                'titulo'              => (string)($task['titulo'] ?? ''),
-                                'decision'            => 'rejected',
-                                'action'              => $reviewAction,
-                                'requested_state'     => $task['review_requested_state'] ?? null,
-                                'previous_state'      => $task['review_previous_state'] ?? null,
-                                'requested_fecha_fin' => $task['review_requested_fecha_fin'] ?? null,
-                                'requested_reason'    => $task['review_reason'] ?? null,
-                                'result_estado'       => $payload['id_estado_tarea'] ?? null,
-                                'result_fecha_fin'    => null,
-                            ];
-
-                            $this->insertDecisionLog(
-                                (int)$taskId,
-                                $requestedBy,
-                                (int)$currentUserId,
-                                'rejected',
-                                $reviewAction,
-                                $details
-                            );
-
-                            $this->updateLatestReviewLogDecision(
-                                (int)$taskId,
-                                $requestedBy,
-                                'rejected',
-                                (int)$currentUserId,
-                                'Máximo de 3 cambios de fecha alcanzado.'
-                            );
-                        }
 
                         $processed++;
                         continue;
@@ -4621,7 +4827,7 @@ class TareaService
 
                     $endDt = $this->parseLocalDateTime($reqFin);
 
-                    $newPriority = (int) ($task['id_prioridad'] ?? 1);
+                    $newPriority = (int)($task['id_prioridad'] ?? 1);
                     if ($endDt) {
                         $newPriority = $this->autoPriorityFromEnd($endDt, (int)($task['id_prioridad'] ?? 0));
                     }
@@ -4630,7 +4836,6 @@ class TareaService
                         'fecha_fin'                  => $endDt ? $this->toDbDateTime($endDt) : $reqFin,
                         'id_prioridad'               => $newPriority,
                         'id_estado_tarea'            => $prevState,
-
                         'review_requested_state'     => null,
                         'review_requested_at'        => null,
                         'review_action'              => null,
@@ -4638,7 +4843,7 @@ class TareaService
                         'review_requested_by'        => null,
                         'review_requested_fecha_fin' => null,
                         'review_previous_state'      => null,
-
+                        'review_cancel_scope'        => null,
                         'approved_by'                => $currentUserId,
                         'approved_at'                => $now,
                         'completed_at'               => null,
@@ -4652,49 +4857,17 @@ class TareaService
                         ->where('id_tarea', (int)$taskId)
                         ->update($payload);
 
-                    if ($requestedBy > 0) {
-                        $details = [
-                            'id_tarea'            => (int)$taskId,
-                            'titulo'              => (string)($task['titulo'] ?? ''),
-                            'decision'            => $decision,
-                            'action'              => $reviewAction,
-                            'requested_state'     => $task['review_requested_state'] ?? null,
-                            'previous_state'      => $task['review_previous_state'] ?? null,
-                            'requested_fecha_fin' => $task['review_requested_fecha_fin'] ?? null,
-                            'requested_reason'    => $task['review_reason'] ?? null,
-                            'result_estado'       => $payload['id_estado_tarea'] ?? null,
-                            'result_fecha_fin'    => $payload['fecha_fin'] ?? null,
-                        ];
-
-                        $this->insertDecisionLog(
-                            (int)$taskId,
-                            $requestedBy,
-                            (int)$currentUserId,
-                            $decision,
-                            $reviewAction,
-                            $details
-                        );
-
-                        $this->updateLatestReviewLogDecision(
-                            (int)$taskId,
-                            $requestedBy,
-                            $decision,
-                            (int)$currentUserId,
-                            null
-                        );
-                    }
-
                     $processed++;
                     continue;
                 }
 
-                // --------------------------------------------------
-                // C) Legacy / compatibilidad (realizada / no realizada)
-                // --------------------------------------------------
-                $editCount = (int) ($task['edit_count'] ?? 0);
+                // ==================================================
+                // Legacy / compatibilidad
+                // ==================================================
+                $editCount = (int)($task['edit_count'] ?? 0);
                 $forcedNoRealizada = ($editCount > $this->maxEditsForRealizada);
 
-                $req = (int) ($task['review_requested_state'] ?? 0);
+                $req = (int)($task['review_requested_state'] ?? 0);
 
                 $finalEstado = in_array($req, [$this->estadoRealizada, $this->estadoNoRealizada], true)
                     ? $req
@@ -4708,56 +4881,20 @@ class TareaService
                     'id_estado_tarea'            => $finalEstado,
                     'review_requested_state'     => null,
                     'review_requested_at'        => null,
-
                     'review_action'              => null,
                     'review_reason'              => null,
                     'review_requested_by'        => null,
                     'review_requested_fecha_fin' => null,
                     'review_previous_state'      => null,
-
+                    'review_cancel_scope'        => null,
                     'approved_by'                => $currentUserId,
                     'approved_at'                => $now,
-
-                    'completed_at' => in_array($finalEstado, [$this->estadoRealizada, $this->estadoNoRealizada], true)
-                        ? $now
-                        : null,
+                    'completed_at'               => in_array($finalEstado, [$this->estadoRealizada, $this->estadoNoRealizada], true) ? $now : null,
                 ];
 
                 $db->table('public.tareas')
                     ->where('id_tarea', (int)$taskId)
                     ->update($payload);
-
-                if ($requestedBy > 0) {
-                    $details = [
-                        'id_tarea'            => (int)$taskId,
-                        'titulo'              => (string)($task['titulo'] ?? ''),
-                        'decision'            => $decision,
-                        'action'              => ($reviewAction !== '' ? $reviewAction : 'state'),
-                        'requested_state'     => $task['review_requested_state'] ?? null,
-                        'previous_state'      => $task['review_previous_state'] ?? null,
-                        'requested_fecha_fin' => $task['review_requested_fecha_fin'] ?? null,
-                        'requested_reason'    => $task['review_reason'] ?? null,
-                        'result_estado'       => $payload['id_estado_tarea'] ?? null,
-                        'result_fecha_fin'    => null,
-                    ];
-
-                    $this->insertDecisionLog(
-                        (int)$taskId,
-                        $requestedBy,
-                        (int)$currentUserId,
-                        $decision,
-                        ($reviewAction !== '' ? $reviewAction : 'state'),
-                        $details
-                    );
-
-                    $this->updateLatestReviewLogDecision(
-                        (int)$taskId,
-                        $requestedBy,
-                        $decision,
-                        (int)$currentUserId,
-                        null
-                    );
-                }
 
                 $processed++;
             }
@@ -4783,9 +4920,6 @@ class TareaService
             ];
         }
 
-        // ==================================================
-        // RESPUESTA FINAL
-        // ==================================================
         if ($action === 'cancel_request') {
             return [
                 'success'           => true,
@@ -5150,17 +5284,9 @@ class TareaService
      */
     public function getDecisionNotifications(int $requestedBy): array
     {
-        // ==================================================
-        // ✅ Conexión a BD
-        // ==================================================
         $db = Database::connect();
 
         try {
-            // ==================================================
-            // ✅ Consultar SOLO notificaciones no leídas
-            // - requested_by: usuario que hizo la solicitud
-            // - seen_by_requester = false: aún no vistas
-            // ==================================================
             $rows = $db->table('public.tarea_review_decision_log l')
                 ->select([
                     'l.id_log',
@@ -5185,13 +5311,7 @@ class TareaService
                 ->get()
                 ->getResultArray();
 
-            // ==================================================
-            // ✅ Normalizar salida para la vista
-            // ==================================================
             foreach ($rows as &$r) {
-                // ----------------------------------------------
-                // Nombre del supervisor que aprobó/rechazó
-                // ----------------------------------------------
                 $fullName = trim(
                     (string)($r['decided_by_nombres'] ?? '') . ' ' .
                         (string)($r['decided_by_apellidos'] ?? '')
@@ -5199,19 +5319,9 @@ class TareaService
 
                 $r['approved_by_nombre'] = ($fullName !== '') ? $fullName : 'Supervisor';
 
-                // ----------------------------------------------
-                // Título amigable de la tarea
-                // ----------------------------------------------
                 $titulo = trim((string)($r['titulo_tarea'] ?? ''));
                 $r['titulo'] = ($titulo !== '') ? $titulo : 'Actividad';
 
-                // ----------------------------------------------
-                // Decodificar details (jsonb)
-                // Puede venir:
-                // - array
-                // - string JSON
-                // - null
-                // ----------------------------------------------
                 $decodedDetails = [];
 
                 if (isset($r['details']) && $r['details'] !== null && $r['details'] !== '') {
@@ -5227,19 +5337,24 @@ class TareaService
 
                 $r['details_array'] = $decodedDetails;
 
-                // ----------------------------------------------
-                // Campos útiles ya preparados para la vista
-                // ----------------------------------------------
-                $r['requested_state']     = $decodedDetails['requested_state'] ?? null;
-                $r['previous_state']      = $decodedDetails['previous_state'] ?? null;
-                $r['requested_fecha_fin'] = $decodedDetails['requested_fecha_fin'] ?? null;
-                $r['requested_reason']    = $decodedDetails['requested_reason'] ?? null;
-                $r['result_estado']       = $decodedDetails['result_estado'] ?? null;
-                $r['result_fecha_fin']    = $decodedDetails['result_fecha_fin'] ?? null;
+                $r['requested_state']      = $decodedDetails['requested_state'] ?? null;
+                $r['previous_state']       = $decodedDetails['previous_state'] ?? null;
+                $r['requested_fecha_fin']  = $decodedDetails['requested_fecha_fin'] ?? null;
+                $r['requested_reason']     = $decodedDetails['requested_reason'] ?? null;
+                $r['result_estado']        = $decodedDetails['result_estado'] ?? null;
+                $r['result_fecha_fin']     = $decodedDetails['result_fecha_fin'] ?? null;
 
-                // ----------------------------------------------
-                // Compatibles con tu JS / modal actual
-                // ----------------------------------------------
+                // ✅ NUEVO: alcance de cancelación
+                $r['requested_cancel_scope'] = $decodedDetails['requested_cancel_scope'] ?? null;
+
+                $scopeRaw = trim((string)($r['requested_cancel_scope'] ?? ''));
+
+                $r['requested_cancel_scope_label'] = match ($scopeRaw) {
+                    'all'          => 'En cadena',
+                    'single_today' => 'Solo este día',
+                    default        => '-',
+                };
+
                 $r['action_label'] = match ((string)($r['action'] ?? '')) {
                     'cancel'      => 'Cancelación',
                     'date_change' => 'Cambio de fecha',
@@ -5657,16 +5772,20 @@ class TareaService
                 // ----------------------------------------------
                 if ($requestedBy > 0) {
                     $details = [
-                        'id_tarea'            => (int) $taskId,
-                        'titulo'              => (string) ($task['titulo'] ?? ''),
-                        'decision'            => $decisionForLog,
-                        'action'              => $actionForLog,
-                        'requested_state'     => $task['review_requested_state'] ?? null,
-                        'previous_state'      => $task['review_previous_state'] ?? null,
-                        'requested_fecha_fin' => $task['review_requested_fecha_fin'] ?? null,
-                        'requested_reason'    => $task['review_reason'] ?? null,
-                        'result_estado'       => $payload['id_estado_tarea'] ?? null,
-                        'result_fecha_fin'    => $payload['fecha_fin'] ?? null,
+                        'id_tarea'                => (int) $taskId,
+                        'titulo'                  => (string) ($task['titulo'] ?? ''),
+                        'decision'                => $decisionForLog,
+                        'action'                  => $actionForLog,
+                        'requested_state'         => $task['review_requested_state'] ?? null,
+                        'previous_state'          => $task['review_previous_state'] ?? null,
+                        'requested_fecha_fin'     => $task['review_requested_fecha_fin'] ?? null,
+                        'requested_reason'        => $task['review_reason'] ?? null,
+
+                        // ✅ NUEVO: guardar si pidió cancelar solo este día o en cadena
+                        'requested_cancel_scope'  => $task['review_cancel_scope'] ?? null,
+
+                        'result_estado'           => $payload['id_estado_tarea'] ?? null,
+                        'result_fecha_fin'        => $payload['fecha_fin'] ?? null,
                     ];
 
                     $this->insertDecisionLog(

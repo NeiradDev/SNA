@@ -258,6 +258,16 @@ $reviewActionBadgeClass = function (array $t): string {
   return 'badge-review-generic';
 };
 
+$reviewCancelScopeLabel = function (?string $scope): string {
+  $scope = trim((string)$scope);
+
+  return match ($scope) {
+    'all'          => 'En cadena',
+    'single_today' => 'Solo este día',
+    default        => '-',
+  };
+};
+
 $canCancelRow = function (array $t) use ($assignMode, $currentUserId): bool {
   $estadoId = (int)($t['id_estado_tarea'] ?? 0);
 
@@ -1344,6 +1354,7 @@ $decisionNotifications = $decisionNotifications ?? [];
                 <th>Solicitado por</th>
                 <th>Acción</th>
                 <th>Estado solicitado</th>
+                <th>Alcance cancelación</th>
                 <th>Evidencia</th>
                 <th>Observación evidencia</th>
                 <th>Motivo</th>
@@ -1385,6 +1396,7 @@ $decisionNotifications = $decisionNotifications ?? [];
                     </span>
                   </td>
                   <td><span class="badge bg-secondary"><?= esc($estadoSolicitadoText) ?></span></td>
+                  <td><?= esc($reviewCancelScopeLabel($t['review_cancel_scope'] ?? null)) ?></td>
 
                   <td>
                     <?php if ($hasEvidence && $evidenceUrl !== ''): ?>
@@ -1425,6 +1437,7 @@ $decisionNotifications = $decisionNotifications ?? [];
                       data-solicitado-por="<?= esc((string)($t['review_requested_by_nombre'] ?? '-'), 'attr') ?>"
                       data-accion="<?= esc($accionLabel, 'attr') ?>"
                       data-estado-solicitado="<?= esc($estadoSolicitadoText, 'attr') ?>"
+                      data-cancel-scope="<?= esc($reviewCancelScopeLabel($t['review_cancel_scope'] ?? null), 'attr') ?>"
                       data-has-evidence="<?= $hasEvidence ? 'Sí' : 'No' ?>"
                       data-evidence-url="<?= esc((string)($evidenceUrl !== '' ? $evidenceUrl : '-'), 'attr') ?>"
                       data-evidence-note="<?= esc((string)($evidenceNote !== '' ? $evidenceNote : '-'), 'attr') ?>"
@@ -1606,9 +1619,18 @@ $decisionNotifications = $decisionNotifications ?? [];
                               <?php if ($canCancel): ?>
                                 <form action="<?= site_url('tareas/cancelar/' . (int)$t['id_tarea']) ?>" method="post" class="m-0 form-cancel-task d-inline">
                                   <?= csrf_field() ?>
+
                                   <input type="hidden" name="id_estado_tarea" value="5">
-                                  <input type="hidden" name="review_reason" value="">
-                                  <button type="button" class="btn btn-sm btn-outline-danger btn-cancel btn-cancel-task" data-task="<?= (int)$t['id_tarea'] ?>" title="Solicitar cancelación">
+                                  <input type="hidden" name="review_reason" class="cancel-review-reason" value="">
+                                  <input type="hidden" name="cancel_scope" class="cancel-scope" value="single_today">
+
+                                  <button
+                                    type="button"
+                                    class="btn btn-sm btn-outline-danger btn-cancel btn-cancel-task"
+                                    data-task="<?= (int)$t['id_tarea'] ?>"
+                                    data-title="<?= esc((string)($t['titulo'] ?? 'Actividad'), 'attr') ?>"
+                                    data-is-recurring="<?= !empty($t['recurrence_uid']) ? '1' : '0' ?>"
+                                    title="Cancelar actividad">
                                     <span class="icon-btn icon-cancel">
                                       <svg viewBox="0 0 16 16" aria-hidden="true">
                                         <path d="M8 1a7 7 0 1 0 0 14A7 7 0 0 0 8 1zm3.354 9.646a.5.5 0 0 1-.708.708L8 8.707l-2.646 2.647a.5.5 0 0 1-.708-.708L7.293 8 4.646 5.354a.5.5 0 1 1 .708-.708L8 7.293l2.646-2.647a.5.5 0 0 1 .708.708L8.707 8l2.647 2.646z" />
@@ -1822,8 +1844,15 @@ $decisionNotifications = $decisionNotifications ?? [];
                             <form action="<?= site_url('tareas/cancelar/' . (int)$t['id_tarea']) ?>" method="post" class="m-0 form-cancel-task d-inline">
                               <?= csrf_field() ?>
                               <input type="hidden" name="id_estado_tarea" value="5">
-                              <input type="hidden" name="review_reason" value="">
-                              <button type="button" class="btn btn-sm btn-outline-danger btn-cancel btn-cancel-task" data-task="<?= (int)$t['id_tarea'] ?>" title="Solicitar cancelación">
+                              <input type="hidden" name="review_reason" class="cancel-review-reason" value="">
+                              <input type="hidden" name="cancel_scope" class="cancel-scope" value="single_today">
+                              <button
+                                type="button"
+                                class="btn btn-sm btn-outline-danger btn-cancel btn-cancel-task"
+                                data-task="<?= (int)$t['id_tarea'] ?>"
+                                data-title="<?= esc((string)($t['titulo'] ?? 'Actividad'), 'attr') ?>"
+                                data-is-recurring="<?= !empty($t['recurrence_uid']) ? '1' : '0' ?>"
+                                title="Solicitar cancelación">
                                 <span class="icon-btn icon-cancel">
                                   <svg viewBox="0 0 16 16" aria-hidden="true">
                                     <path d="M8 1a7 7 0 1 0 0 14A7 7 0 0 0 8 1zm3.354 9.646a.5.5 0 0 1-.708.708L8 8.707l-2.646 2.647a.5.5 0 0 1-.708-.708L7.293 8 4.646 5.354a.5.5 0 1 1 .708-.708L8 7.293l2.646-2.647a.5.5 0 0 1 .708.708L8.707 8l2.647 2.646z" />
@@ -1954,8 +1983,15 @@ $decisionNotifications = $decisionNotifications ?? [];
                                 <form action="<?= site_url('tareas/cancelar/' . (int)$t['id_tarea']) ?>" method="post" class="m-0 form-cancel-task d-inline">
                                   <?= csrf_field() ?>
                                   <input type="hidden" name="id_estado_tarea" value="5">
-                                  <input type="hidden" name="review_reason" value="">
-                                  <button type="button" class="btn btn-sm btn-outline-danger btn-cancel btn-cancel-task" data-task="<?= (int)$t['id_tarea'] ?>" title="Solicitar cancelación">
+                                  <input type="hidden" name="review_reason" class="cancel-review-reason" value="">
+                                  <input type="hidden" name="cancel_scope" class="cancel-scope" value="single_today">
+                                  <button
+                                    type="button"
+                                    class="btn btn-sm btn-outline-danger btn-cancel btn-cancel-task"
+                                    data-task="<?= (int)$t['id_tarea'] ?>"
+                                    data-title="<?= esc((string)($t['titulo'] ?? 'Actividad'), 'attr') ?>"
+                                    data-is-recurring="<?= !empty($t['recurrence_uid']) ? '1' : '0' ?>"
+                                    title="Solicitar cancelación">
                                     <span class="icon-btn icon-cancel">
                                       <svg viewBox="0 0 16 16" aria-hidden="true">
                                         <path d="M8 1a7 7 0 1 0 0 14A7 7 0 0 0 8 1zm3.354 9.646a.5.5 0 0 1-.708.708L8 8.707l-2.646 2.647a.5.5 0 0 1-.708-.708L7.293 8 4.646 5.354a.5.5 0 1 1 .708-.708L8 7.293l2.646-2.647a.5.5 0 0 1 .708.708L8.707 8l2.647 2.646z" />
@@ -2189,8 +2225,15 @@ $decisionNotifications = $decisionNotifications ?? [];
                                   <form action="<?= site_url('tareas/cancelar/' . (int)$t['id_tarea']) ?>" method="post" class="m-0 form-cancel-task d-inline">
                                     <?= csrf_field() ?>
                                     <input type="hidden" name="id_estado_tarea" value="5">
-                                    <input type="hidden" name="review_reason" value="">
-                                    <button type="button" class="btn btn-sm btn-outline-danger btn-cancel btn-cancel-task" data-task="<?= (int)$t['id_tarea'] ?>" title="Solicitar cancelación">
+                                    <input type="hidden" name="review_reason" class="cancel-review-reason" value="">
+                                    <input type="hidden" name="cancel_scope" class="cancel-scope" value="single_today">
+                                    <button
+                                      type="button"
+                                      class="btn btn-sm btn-outline-danger btn-cancel btn-cancel-task"
+                                      data-task="<?= (int)$t['id_tarea'] ?>"
+                                      data-title="<?= esc((string)($t['titulo'] ?? 'Actividad'), 'attr') ?>"
+                                      data-is-recurring="<?= !empty($t['recurrence_uid']) ? '1' : '0' ?>"
+                                      title="Solicitar cancelación">
                                       <span class="icon-btn icon-cancel">
                                         <svg viewBox="0 0 16 16" aria-hidden="true">
                                           <path d="M8 1a7 7 0 1 0 0 14A7 7 0 0 0 8 1zm3.354 9.646a.5.5 0 0 1-.708.708L8 8.707l-2.646 2.647a.5.5 0 0 1-.708-.708L7.293 8 4.646 5.354a.5.5 0 1 1 .708-.708L8 7.293l2.646-2.647a.5.5 0 0 1 .708.708L8.707 8l2.647 2.646z" />
@@ -2356,24 +2399,44 @@ $decisionNotifications = $decisionNotifications ?? [];
   <div class="modal-dialog modal-dialog-centered">
     <div class="modal-content">
       <div class="modal-header bg-dark text-white">
-        <h5 class="modal-title">Solicitar cancelación</h5>
+        <h5 class="modal-title">Cancelar actividad</h5>
         <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Cerrar"></button>
       </div>
 
       <div class="modal-body">
-        <div class="alert alert-warning mb-3">
-          Esta cancelación <b>NO</b> se aplicará de inmediato.<br>
-          Se enviará a <b>revisión</b> de tu supervisor.
+        <div class="mb-3">
+          <div class="fw-bold mb-1">Actividad</div>
+          <div id="modalCancelReasonTaskTitle" class="text-muted">Actividad</div>
         </div>
 
-        <label class="form-label fw-semibold">Motivo (obligatorio)</label>
-        <textarea id="cancelReasonText" class="form-control" rows="4" placeholder="Escribe el motivo..."></textarea>
-        <small class="text-muted">El supervisor verá este motivo para aprobar o rechazar.</small>
+        <div class="mb-3">
+          <label class="form-label fw-semibold">Motivo de cancelación</label>
+          <textarea id="cancelReasonText" class="form-control" rows="4" placeholder="Escribe el motivo..."></textarea>
+          <small class="text-muted">Si eres subordinado, la solicitud se enviará a revisión de tu supervisor.</small>
+        </div>
+
+        <div id="cancelRecurringQuestionWrap" style="display:none;">
+          <label class="form-label fw-semibold">Alcance de la cancelación</label>
+
+          <div class="d-flex gap-2 flex-wrap mb-2">
+            <button type="button" class="btn btn-outline-dark btn-cancel-scope active" data-scope="single_today">
+              Solo la actividad de hoy
+            </button>
+
+            <button type="button" class="btn btn-outline-dark btn-cancel-scope" data-scope="all">
+              Cancelar en cadena
+            </button>
+          </div>
+        </div>
+
+        <div id="cancelScopeText" class="text-muted small">
+          Esta actividad no es repetitiva. Se cancelará solo esta actividad.
+        </div>
       </div>
 
       <div class="modal-footer">
         <button type="button" class="btn btn-outline-dark" data-bs-dismiss="modal">Volver</button>
-        <button type="button" class="btn btn-dark" id="btnSendCancelReason">Enviar a revisión</button>
+        <button type="button" class="btn btn-dark" id="btnSendCancelReason">Continuar</button>
       </div>
     </div>
   </div>
@@ -2582,6 +2645,11 @@ $decisionNotifications = $decisionNotifications ?? [];
           </div>
 
           <div class="col-md-6">
+            <label class="form-label fw-semibold">Alcance de cancelación</label>
+            <div class="form-control bg-light" id="reviewDetailCancelScope">-</div>
+          </div>
+
+          <div class="col-md-6">
             <label class="form-label fw-semibold">¿Tiene evidencia?</label>
             <div class="form-control bg-light" id="reviewDetailHasEvidence">-</div>
           </div>
@@ -2773,6 +2841,17 @@ $decisionNotifications = $decisionNotifications ?? [];
     let pendingEstadoStateId = 0;
     let pendingExpiredTasks = [];
 
+    // ==================================================
+    // NUEVO: variables para flujo de cancelación
+    // - mantiene subordinado => revisión
+    // - supervisor/jefe => directo
+    // - repetitiva => puede elegir solo hoy / en cadena
+    // ==================================================
+    let cancelTargetForm = null;
+    let cancelTargetIsRecurring = false;
+    let cancelTargetTitle = '';
+    let cancelTargetScope = 'single_today';
+
     function escapeHtml(str) {
       return String(str)
         .replaceAll('&', '&amp;')
@@ -2789,11 +2868,13 @@ $decisionNotifications = $decisionNotifications ?? [];
     function showInfoModal(title, body, onClose = null) {
       $('#modalInfoTitle').text(title || 'Mensaje');
       $('#modalInfoBody').html(body || '');
+
       $(modalInfoEl)
         .off('hidden.bs.modal')
         .on('hidden.bs.modal', function() {
           if (typeof onClose === 'function') onClose();
         });
+
       modalInfo.show();
     }
 
@@ -2806,7 +2887,11 @@ $decisionNotifications = $decisionNotifications ?? [];
 
     $('#modalConfirmOk').on('click', function() {
       modalConfirm.hide();
-      if (confirmCallback) confirmCallback();
+
+      if (confirmCallback) {
+        confirmCallback();
+      }
+
       confirmCallback = null;
     });
 
@@ -3076,6 +3161,7 @@ $decisionNotifications = $decisionNotifications ?? [];
 
       const resultEstado = detailsArray.result_estado ?? null;
       const resultFechaFin = detailsArray.result_fecha_fin ?? null;
+      const requestedCancelScope = String(detailsArray.requested_cancel_scope || '').trim();
 
       let parts = [];
 
@@ -3085,6 +3171,12 @@ $decisionNotifications = $decisionNotifications ?? [];
 
       if (resultFechaFin !== null && String(resultFechaFin).trim() !== '') {
         parts.push('Fecha fin: ' + fmtDate(String(resultFechaFin)));
+      }
+
+      if (requestedCancelScope === 'single_today') {
+        parts.push('Alcance: Solo este día');
+      } else if (requestedCancelScope === 'all') {
+        parts.push('Alcance: En cadena');
       }
 
       return parts.length ? parts.join(' | ') : '-';
@@ -3200,6 +3292,7 @@ $decisionNotifications = $decisionNotifications ?? [];
         const id = Number($(this).val());
         if (id > 0) ids.push(id);
       });
+
       setUiState({
         reviewChecks: ids
       });
@@ -3228,6 +3321,7 @@ $decisionNotifications = $decisionNotifications ?? [];
     function restoreScrollState() {
       const state = getUiState();
       const y = Number(state.scrollY || 0);
+
       if (y > 0) {
         setTimeout(function() {
           window.scrollTo(0, y);
@@ -3244,7 +3338,7 @@ $decisionNotifications = $decisionNotifications ?? [];
 
     restoreDateFilterState();
 
-    const assignMode = <?= json_encode($assignMode) ?>;
+    const assignMode = <?= json_encode($assignMode ?? ($assignScope['mode'] ?? 'self')) ?>;
 
     function initDataTable(idTabla, columnaOrdenInicio, ordenAsc = false) {
       if (!$(idTabla).length) return;
@@ -3696,27 +3790,78 @@ $decisionNotifications = $decisionNotifications ?? [];
       }
     });
 
-    let cancelTargetForm = null;
+    // ==================================================
+    // NUEVO BLOQUE CORREGIDO: CANCELACIÓN
+    // - no usa prompt()
+    // - usa tu modal modalCancelReason
+    // - subordinado => revisión
+    // - supervisor/jefe => directo
+    // - repetitiva => solo hoy / en cadena
+    // ==================================================
+    function resetCancelReasonModalState() {
+      cancelTargetForm = null;
+      cancelTargetIsRecurring = false;
+      cancelTargetTitle = '';
+      cancelTargetScope = 'single_today';
 
-    $(document).on('click', '.btn-cancel-task', function() {
-      const form = $(this).closest('form.form-cancel-task')[0];
-      if (!form) return;
-
-      saveUiContext();
-      cancelTargetForm = form;
       $('#cancelReasonText').val('');
+      $('#modalCancelReasonTaskTitle').text('Actividad');
 
-      showConfirmModal(
-        'Solicitar cancelación',
-        '¿Deseas solicitar la <b>CANCELACIÓN</b> de esta actividad?<br><small class="text-muted">Se enviará a revisión del supervisor.</small>',
-        function() {
-          modalCancelReason.show();
-        }
-      );
+      $('#cancelRecurringQuestionWrap').hide();
+      $('#cancelScopeText').text('Esta actividad no es repetitiva. Se cancelará solo esta actividad.');
+
+      $('.btn-cancel-scope').removeClass('active');
+    }
+
+    $(document).on('click', '.btn-cancel-task', function(e) {
+      e.preventDefault();
+      e.stopPropagation();
+      const $btn = $(this);
+      const $form = $btn.closest('form.form-cancel-task');
+
+      if (!$form.length) {
+        return;
+      }
+
+      cancelTargetForm = $form.get(0);
+      cancelTargetIsRecurring = String($btn.data('is-recurring') || '0') === '1';
+      cancelTargetTitle = String($btn.data('title') || 'Actividad').trim();
+      cancelTargetScope = 'single_today';
+
+      $('#cancelReasonText').val('');
+      $('#modalCancelReasonTaskTitle').text(cancelTargetTitle);
+
+      if (cancelTargetIsRecurring) {
+        $('#cancelRecurringQuestionWrap').show();
+        $('#cancelScopeText').text('Selecciona si deseas cancelar solo la tarea de hoy o cancelar en cadena.');
+        $('.btn-cancel-scope').removeClass('active');
+        $('.btn-cancel-scope[data-scope="single_today"]').addClass('active');
+      } else {
+        $('#cancelRecurringQuestionWrap').hide();
+        $('#cancelScopeText').text('Esta actividad no es repetitiva. Se cancelará solo esta actividad.');
+        $('.btn-cancel-scope').removeClass('active');
+      }
+
+      modalCancelReason.show();
+    });
+
+    $(document).on('click', '.btn-cancel-scope', function() {
+      const scope = String($(this).data('scope') || 'single_today').trim();
+
+      cancelTargetScope = (scope === 'all') ? 'all' : 'single_today';
+
+      $('.btn-cancel-scope').removeClass('active');
+      $(this).addClass('active');
+    });
+
+    $(modalCancelReasonEl).on('hidden.bs.modal', function() {
+      resetCancelReasonModalState();
     });
 
     $('#btnSendCancelReason').on('click', function() {
-      if (!cancelTargetForm) return;
+      if (!cancelTargetForm) {
+        return;
+      }
 
       const motivo = String($('#cancelReasonText').val() || '').trim();
 
@@ -3725,11 +3870,45 @@ $decisionNotifications = $decisionNotifications ?? [];
         return;
       }
 
-      const input = cancelTargetForm.querySelector('input[name="review_reason"]');
-      if (input) input.value = motivo;
+      // ✅ Guardar referencias antes de cerrar el modal
+      const formToSubmit = cancelTargetForm;
+      const isRecurringToSubmit = cancelTargetIsRecurring;
+      const scopeToSubmit = cancelTargetIsRecurring ? cancelTargetScope : 'single_today';
+      const isSubordinate = (assignMode === 'self');
 
-      saveUiContext();
-      cancelTargetForm.submit();
+      const reasonInput = formToSubmit.querySelector('input[name="review_reason"]');
+      const scopeInput = formToSubmit.querySelector('input[name="cancel_scope"]');
+
+      if (reasonInput) {
+        reasonInput.value = motivo;
+      }
+
+      if (scopeInput) {
+        scopeInput.value = scopeToSubmit;
+      }
+
+      let confirmText = '';
+
+      if (isRecurringToSubmit) {
+        confirmText = (scopeToSubmit === 'all') ?
+          '¿Confirmas que deseas cancelar <b>esta actividad en cadena</b>?<br><small class="text-muted">Se afectará la tarea de hoy y las futuras de esta misma serie.</small>' :
+          '¿Confirmas que deseas cancelar <b>solo la actividad de hoy</b>?';
+      } else {
+        confirmText = '¿Confirmas que deseas cancelar esta actividad?';
+      }
+
+      if (isSubordinate) {
+        confirmText += '<br><small class="text-muted">La solicitud será enviada a revisión de tu supervisor.</small>';
+      } else {
+        confirmText += '<br><small class="text-muted">La cancelación se aplicará directamente.</small>';
+      }
+
+      modalCancelReason.hide();
+
+      showConfirmModal('Confirmar cancelación', confirmText, function() {
+        saveUiContext();
+        formToSubmit.submit();
+      });
     });
 
     $('#chkAllRevision').on('change', function() {
@@ -3910,6 +4089,7 @@ $decisionNotifications = $decisionNotifications ?? [];
       $('#reviewDetailRequestedBy').text($btn.data('solicitado-por') || '-');
       $('#reviewDetailAction').text($btn.data('accion') || '-');
       $('#reviewDetailRequestedState').text($btn.data('estado-solicitado') || '-');
+      $('#reviewDetailCancelScope').text($btn.data('cancel-scope') || '-');
       $('#reviewDetailHasEvidence').text(hasEvidence);
       $('#reviewDetailEvidenceNote').text(evidenceNote);
       $('#reviewDetailRequestedAt').text($btn.data('fecha-solicitud') || '-');

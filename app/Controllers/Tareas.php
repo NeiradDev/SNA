@@ -466,26 +466,36 @@ class Tareas extends BaseController
             return redirect()->to(site_url('tareas/gestionar'));
         }
 
-        $currentUserId   = (int) (session()->get('id_user') ?? 0);
-        $currentUserArea = (int) (session()->get('id_area') ?? 0);
+        $currentUserId   = (int)(session()->get('id_user') ?? 0);
+        $currentUserArea = (int)(session()->get('id_area') ?? 0);
 
-        $reason = (string) ($this->request->getPost('review_reason') ?? $this->request->getPost('motivo') ?? '');
+        $reason = (string)($this->request->getPost('review_reason') ?? $this->request->getPost('motivo') ?? '');
         $reason = trim($reason);
+
+        // ✅ NUEVO: alcance de cancelación
+        // Valores esperados:
+        // - single_today  => solo esta tarea
+        // - all           => toda la serie repetitiva
+        $cancelScope = (string)($this->request->getPost('cancel_scope') ?? 'single_today');
+        $cancelScope = in_array($cancelScope, ['single_today', 'all'], true)
+            ? $cancelScope
+            : 'single_today';
 
         $result = $this->service->cancelTask(
             $idTarea,
             $currentUserId,
             $currentUserArea,
-            ($reason !== '' ? $reason : null)
+            ($reason !== '' ? $reason : null),
+            $cancelScope
         );
 
         if (!empty($result['success'])) {
             return redirect()->to(site_url('tareas/gestionar'))
-                ->with('success', (string) ($result['message'] ?? 'Acción ejecutada correctamente.'));
+                ->with('success', (string)($result['message'] ?? 'Acción ejecutada correctamente.'));
         }
 
         return redirect()->to(site_url('tareas/gestionar'))
-            ->with('error', (string) ($result['error'] ?? 'No se pudo cancelar la tarea.'));
+            ->with('error', (string)($result['error'] ?? 'No se pudo cancelar la tarea.'));
     }
 
     // ==================================================
@@ -515,15 +525,27 @@ class Tareas extends BaseController
             ]);
         }
 
+        // ==================================================
+        // CANCELAR
+        // ==================================================
         if ($estado === 5) {
             $reason = (string) ($this->request->getPost('review_reason') ?? $this->request->getPost('motivo') ?? '');
             $reason = trim($reason);
+
+            // ✅ NUEVO: recibir alcance de cancelación
+            // - single_today => solo esta tarea
+            // - all          => esta + futuras de la repetitiva
+            $cancelScope = (string) ($this->request->getPost('cancel_scope') ?? 'single_today');
+            $cancelScope = in_array($cancelScope, ['single_today', 'all'], true)
+                ? $cancelScope
+                : 'single_today';
 
             $result = $this->service->cancelTask(
                 $idTarea,
                 (int) session()->get('id_user'),
                 (int) session()->get('id_area'),
-                ($reason !== '' ? $reason : null)
+                ($reason !== '' ? $reason : null),
+                $cancelScope
             );
 
             return $this->response->setJSON([
@@ -534,6 +556,9 @@ class Tareas extends BaseController
             ]);
         }
 
+        // ==================================================
+        // REALIZADA / NO REALIZADA
+        // ==================================================
         $reason = (string) ($this->request->getPost('review_reason') ?? $this->request->getPost('motivo') ?? '');
         $reason = trim($reason);
 
